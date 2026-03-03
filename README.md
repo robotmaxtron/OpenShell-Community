@@ -9,8 +9,7 @@ This repo is the community ecosystem around NemoClaw -- a hub for contributed sk
 | Directory | Description |
 |-----------|-------------|
 | `brev/` | [Brev](https://brev.dev) launchable for one-click cloud deployment of NemoClaw |
-| `sandboxes/` | Pre-built sandbox images for domain-specific workloads |
-| `skills/` | Community-contributed agent skills and tool definitions |
+| `sandboxes/` | Pre-built sandbox images for domain-specific workloads (each with its own skills) |
 
 ### Sandboxes
 

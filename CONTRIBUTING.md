@@ -5,7 +5,7 @@ Thank you for your interest in contributing to the NemoClaw Community ecosystem.
 ## Ways to Contribute
 
 - **Sandbox images** -- Add new domain-specific sandbox environments under `sandboxes/`
-- **Skills** -- Create agent skills and tool definitions under `skills/`
+- **Skills** -- Create agent skills and tool definitions inside a sandbox's `skills/` directory
 - **Bug fixes** -- Fix issues in existing sandboxes, skills, or configurations
 - **Documentation** -- Improve READMEs, guides, and usage examples
 - **Integrations** -- Connect NemoClaw to new tools, platforms, or workflows
@@ -40,9 +40,9 @@ Requirements:
 
 ## Adding a Skill
 
-Skills go under `skills/`. Each skill should include:
-- A clear description of what it does
-- Input/output schema
+Skills live inside their sandbox's `skills/` directory (e.g., `sandboxes/openclaw/skills/my-skill/`). Each skill should include:
+- A `SKILL.md` describing what it does and when to use it
+- Any supporting files the skill needs
 - A README with usage examples
 
 ## Submitting a Pull Request

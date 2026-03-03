@@ -48,7 +48,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 
-See `SECURITY.md`. Do not file public issues for security vulnerabilities.
+See [SECURITY.md](SECURITY.md). Do not file public issues for security vulnerabilities.
 
 ## License
 

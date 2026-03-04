@@ -12,14 +12,16 @@
 
 # ── Stage 1: System base ─────────────────────────────────────────────────────
 
-FROM python:3.12-slim AS system
+FROM ubuntu:24.04 AS system
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /sandbox
 
 # Core system dependencies
+# python3 + pip: agent scripting and SDK usage
 # iproute2: network namespace management (ip netns, veth pairs)
 # dnsutils: dig, nslookup
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,6 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         iputils-ping \
         net-tools \
         netcat-openbsd \
+        python3 \
+        python3-pip \
+        python3-venv \
         traceroute \
     && rm -rf /var/lib/apt/lists/*
 

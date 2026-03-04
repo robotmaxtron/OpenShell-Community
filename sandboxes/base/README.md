@@ -6,7 +6,8 @@ The foundational sandbox image that all other NemoClaw Community sandbox images 
 
 | Category | Tools |
 |----------|-------|
-| Language | `python` (3.12), `node` (22) |
+| OS | Ubuntu 24.04 |
+| Language | `python3`, `node` (22) |
 | Developer | `gh`, `git`, `vim`, `nano`, `uv` |
 | Networking | `ping`, `dig`, `nslookup`, `nc`, `traceroute`, `netstat`, `curl` |
 

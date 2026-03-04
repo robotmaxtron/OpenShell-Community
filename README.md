@@ -13,11 +13,12 @@ This repo is the community ecosystem around NemoClaw -- a hub for contributed sk
 
 ### Sandboxes
 
-| Sandbox                 | Description                                     |
-| ----------------------- | ----------------------------------------------- |
-| `sandboxes/sdg/`        | Synthetic data generation workflows             |
-| `sandboxes/openclaw/`   | OpenClaw -- open agent manipulation and control |
-| `sandboxes/simulation/` | General-purpose simulation sandboxes            |
+| Sandbox                 | Description                                                  |
+| ----------------------- | ------------------------------------------------------------ |
+| `sandboxes/base/`       | Foundational image with system tools, users, and dev environment |
+| `sandboxes/sdg/`        | Synthetic data generation workflows                          |
+| `sandboxes/openclaw/`   | OpenClaw -- open agent manipulation and control              |
+| `sandboxes/simulation/` | General-purpose simulation sandboxes                         |
 
 ## Getting Started
 

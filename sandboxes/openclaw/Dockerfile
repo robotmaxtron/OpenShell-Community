@@ -17,7 +17,8 @@ USER root
 # Install OpenClaw CLI
 RUN npm install -g openclaw
 
-# policy.yaml is automatically copied by the base image ONBUILD directive
+# Copy sandbox policy
+COPY policy.yaml /etc/navigator/policy.yaml
 
 # Copy the OpenClaw startup helper
 COPY openclaw-start.sh /usr/local/bin/openclaw-start

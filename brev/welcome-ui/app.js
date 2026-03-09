@@ -277,7 +277,7 @@
           logGateway.querySelector(".console__text").textContent =
             "OpenClaw agent gateway online.";
 
-          if (keyInjected) {
+          if (keyInjected && sandboxUrl) {
             stopPolling();
           }
           updateButtonState();

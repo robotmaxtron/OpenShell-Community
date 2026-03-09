@@ -1145,12 +1145,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_connection_details(self):
         hostname = _get_hostname()
+        brev_id = BREV_ENV_ID or _detected_brev_id
+        if brev_id:
+            gateway_url = f"https://8080-{brev_id}.brevlab.com"
+        else:
+            gateway_url = f"http://{hostname}:8080"
         return self._json_response(200, {
             "hostname": hostname,
+            "gatewayUrl": gateway_url,
             "gatewayPort": 8080,
             "instructions": {
-                "install": "pip install nemoclaw",
-                "connect": f"nemoclaw cluster connect {hostname}",
+                "install": "curl -fsSL https://github.com/NVIDIA/NemoClaw/releases/download/devel/install.sh | sh",
+                "connect": f"nemoclaw gateway add {gateway_url}",
                 "createSandbox": "nemoclaw sandbox create -- claude",
                 "tui": "nemoclaw term",
             },

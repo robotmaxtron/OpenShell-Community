@@ -27,16 +27,19 @@ intro: >-
 steps:
   - title: Install NemoClaw CLI
     commands:
-      - pip install nemoclaw
+      - "curl -fsSL https://github.com/NVIDIA/NemoClaw/releases/download/devel/install.sh | sh"
     copyable: true
 
-  - title: Connect to this VM
+  - title: Add the gateway
     block_id: connect-cmd-block
     commands:
-      - cmd: "nemoclaw cluster connect <loading...>"
+      - cmd: "nemoclaw gateway add <loading...>"
         id: connect-cmd
     copy_button_id: copy-connect
     copyable: true
+    description: >-
+      This will initiate a JWT auth flow in your browser.
+      Once authorized, you can run any NemoClaw command against this deployment.
 
   - title: Create a sandbox and run your agent
     commands:
@@ -44,8 +47,8 @@ steps:
         cmd: "nemoclaw sandbox create -- claude"
       - comment: OpenCode
         cmd: "nemoclaw sandbox create -- opencode"
-      - comment: Any agent
-        cmd: "nemoclaw sandbox create -- your-agent-command"
+      - comment: Codex
+        cmd: "nemoclaw sandbox create -- codex"
 
   - title: Manage policies with the TUI
     commands:

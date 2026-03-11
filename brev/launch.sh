@@ -2,7 +2,12 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_PATH="${BASH_SOURCE[0]-}"
+if [[ -z "$SOURCE_PATH" || "$SOURCE_PATH" == "bash" || "$SOURCE_PATH" == "-bash" ]]; then
+  SCRIPT_DIR="$PWD"
+else
+  SCRIPT_DIR="$(cd "$(dirname "$SOURCE_PATH")" && pwd)"
+fi
 SCRIPT_REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT=""
 WELCOME_UI_DIR=""
@@ -18,7 +23,12 @@ CLONE_ROOT="${CLONE_ROOT:-/home/ubuntu}"
 CLONE_DIR="${CLONE_DIR:-$CLONE_ROOT/OpenShell-Community}"
 GATEWAY_LOG="${GATEWAY_LOG:-/tmp/openshell-gateway.log}"
 WELCOME_UI_LOG="${WELCOME_UI_LOG:-/tmp/welcome-ui.log}"
+LAUNCH_LOG="${LAUNCH_LOG:-/tmp/openshell-launch.log}"
 WAIT_TIMEOUT_SECS="${WAIT_TIMEOUT_SECS:-30}"
+
+mkdir -p "$(dirname "$LAUNCH_LOG")"
+touch "$LAUNCH_LOG"
+exec > >(tee -a "$LAUNCH_LOG") 2>&1
 
 log() {
   printf '[launch.sh] %s\n' "$*"

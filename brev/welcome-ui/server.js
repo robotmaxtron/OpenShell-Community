@@ -31,8 +31,10 @@ try {
 const PORT = parseInt(process.env.PORT || "8081", 10);
 const ROOT = __dirname;
 const REPO_ROOT = process.env.REPO_ROOT || path.join(ROOT, "..", "..");
+const CLI_BIN = process.env.CLI_BIN || "openshell";
 const SANDBOX_DIR = path.join(REPO_ROOT, "sandboxes", "nemoclaw");
-const NEMOCLAW_IMAGE = "ghcr.io/nvidia/openshell-community/sandboxes/nemoclaw:local";
+const SANDBOX_NAME = process.env.SANDBOX_NAME || "nemoclaw";
+const SANDBOX_START_CMD = process.env.SANDBOX_START_CMD || "nemoclaw-start";
 const POLICY_FILE = path.join(SANDBOX_DIR, "policy.yaml");
 
 const LOG_FILE = "/tmp/nemoclaw-sandbox-create.log";
@@ -127,6 +129,22 @@ function execCmd(args, timeoutMs = 30000) {
       }
     );
   });
+}
+
+function cliArgs(...args) {
+  return [CLI_BIN, ...args];
+}
+
+async function execFirstSuccess(commands, timeoutMs = 30000) {
+  let lastResult = null;
+  for (const args of commands) {
+    const result = await execCmd(args, timeoutMs);
+    if (result.code === 0) {
+      return { ...result, args };
+    }
+    lastResult = { ...result, args };
+  }
+  return lastResult || { code: 1, stdout: "", stderr: "no command executed", args: [] };
 }
 
 function portOpen(host, port, timeoutMs = 1000) {
@@ -518,7 +536,7 @@ async function generateGatewayPolicy() {
   }
 }
 
-async function syncPolicyToGateway(yamlText, sandboxName = "nemoclaw") {
+async function syncPolicyToGateway(yamlText, sandboxName = SANDBOX_NAME) {
   log("policy-sync", `step 2/4: stripping inference+process fields (${yamlText.length} bytes in)`);
   const stripped = stripPolicyFields(yamlText, ["process"]);
   log("policy-sync", `         stripped to ${stripped.length} bytes`);
@@ -529,7 +547,7 @@ async function syncPolicyToGateway(yamlText, sandboxName = "nemoclaw") {
   );
   try {
     fs.writeFileSync(tmpPath, stripped);
-    const args = ["nemoclaw", "policy", "set", sandboxName, "--policy", tmpPath];
+    const args = cliArgs("policy", "set", sandboxName, "--policy", tmpPath);
     log("policy-sync", `step 3/4: running ${args.join(" ")}`);
 
     const t0 = Date.now();
@@ -565,7 +583,7 @@ async function syncPolicyToGateway(yamlText, sandboxName = "nemoclaw") {
 
 async function cleanupExistingSandbox() {
   try {
-    await execCmd(["nemoclaw", "sandbox", "delete", "nemoclaw"], 30000);
+    await execCmd(cliArgs("sandbox", "delete", SANDBOX_NAME), 30000);
   } catch {
     // ignore
   }
@@ -584,10 +602,9 @@ function runSandboxCreate() {
       const policyPath = await generateGatewayPolicy();
 
       const cmd = [
-        "nemoclaw", "sandbox", "create",
-        "--name", "nemoclaw",
-        "--from", "nemoclaw",
-        // "--from", NEMOCLAW_IMAGE,
+        CLI_BIN, "sandbox", "create",
+        "--name", SANDBOX_NAME,
+        "--from", SANDBOX_DIR,
         "--forward", "18789",
       ];
       if (policyPath) cmd.push("--policy", policyPath);
@@ -595,7 +612,7 @@ function runSandboxCreate() {
         "--",
         "env",
         `CHAT_UI_URL=${chatUiUrl}`,
-        "nemoclaw-start"
+        SANDBOX_START_CMD
       );
 
       const cmdDisplay = cmd.slice(0, 8).join(" ") + " -- ...";
@@ -711,12 +728,11 @@ function runInjectKey(key, keyHash) {
   log("inject-key", `step 1/3: received key (hash=${keyHash.slice(0, 12)}…)`);
 
   const args = [
-    "nemoclaw", "provider", "update", "nvidia-inference",
-    "--type", "openai",
+    ...cliArgs("provider", "update", "nvidia-inference"),
     "--credential", `OPENAI_API_KEY=${key}`,
     "--config", "OPENAI_BASE_URL=https://inference-api.nvidia.com/v1",
   ];
-  log("inject-key", "step 2/3: running nemoclaw provider update nvidia-inference …");
+  log("inject-key", `step 2/3: running ${CLI_BIN} provider update nvidia-inference …`);
 
   const t0 = Date.now();
   execCmd(args, 120000)
@@ -782,7 +798,7 @@ async function handleProvidersList(req, res) {
   let names;
   try {
     const result = await execCmd(
-      ["nemoclaw", "provider", "list", "--names"],
+      cliArgs("provider", "list", "--names"),
       30000
     );
     if (result.code !== 0) {
@@ -801,7 +817,7 @@ async function handleProvidersList(req, res) {
   for (const name of names) {
     try {
       const detail = await execCmd(
-        ["nemoclaw", "provider", "get", name],
+        cliArgs("provider", "get", name),
         30000
       );
       if (detail.code === 0) {
@@ -837,7 +853,7 @@ async function handleProviderCreate(req, res) {
     });
   }
 
-  const cmd = ["nemoclaw", "provider", "create", "--name", name, "--type", ptype];
+  const cmd = [...cliArgs("provider", "create"), "--name", name, "--type", ptype];
   const creds = data.credentials || {};
   const configs = data.config || {};
   if (Object.keys(creds).length === 0) {
@@ -873,14 +889,7 @@ async function handleProviderUpdate(req, res, name) {
   }
 
   const ptype = (data.type || "").trim();
-  if (!ptype) {
-    return jsonResponse(res, 400, {
-      ok: false,
-      error: "type is required",
-    });
-  }
-
-  const cmd = ["nemoclaw", "provider", "update", name, "--type", ptype];
+  const cmd = [...cliArgs("provider", "update"), name];
   for (const [k, v] of Object.entries(data.credentials || {})) {
     cmd.push("--credential", `${k}=${v}`);
   }
@@ -891,8 +900,27 @@ async function handleProviderUpdate(req, res, name) {
 
   try {
     const result = await execCmd(cmd, 30000);
-    if (result.code !== 0) {
+    if (result.code === 0) {
+      if (Object.keys(configs).length > 0) cacheProviderConfig(name, configs);
+      return jsonResponse(res, 200, { ok: true });
+    }
+
+    if (!ptype) {
       const err = (result.stderr || result.stdout || "update failed").trim();
+      return jsonResponse(res, 400, { ok: false, error: err });
+    }
+
+    await execCmd(cliArgs("provider", "delete", name), 30000);
+    const createCmd = [...cliArgs("provider", "create"), "--name", name, "--type", ptype];
+    for (const [k, v] of Object.entries(data.credentials || {})) {
+      createCmd.push("--credential", `${k}=${v}`);
+    }
+    for (const [k, v] of Object.entries(configs)) {
+      createCmd.push("--config", `${k}=${v}`);
+    }
+    const recreated = await execCmd(createCmd, 30000);
+    if (recreated.code !== 0) {
+      const err = (recreated.stderr || recreated.stdout || "update failed").trim();
       return jsonResponse(res, 400, { ok: false, error: err });
     }
     if (Object.keys(configs).length > 0) cacheProviderConfig(name, configs);
@@ -904,10 +932,7 @@ async function handleProviderUpdate(req, res, name) {
 
 async function handleProviderDelete(req, res, name) {
   try {
-    const result = await execCmd(
-      ["nemoclaw", "provider", "delete", name],
-      30000
-    );
+    const result = await execCmd(cliArgs("provider", "delete", name), 30000);
     if (result.code !== 0) {
       const err = (result.stderr || result.stdout || "delete failed").trim();
       return jsonResponse(res, 400, { ok: false, error: err });
@@ -948,8 +973,11 @@ function parseClusterInference(stdout) {
 
 async function handleClusterInferenceGet(req, res) {
   try {
-    const result = await execCmd(
-      ["nemoclaw", "cluster", "inference", "get"],
+    const result = await execFirstSuccess(
+      [
+        cliArgs("inference", "get"),
+        cliArgs("cluster", "inference", "get"),
+      ],
       30000
     );
     if (result.code !== 0) {
@@ -1003,11 +1031,10 @@ async function handleClusterInferenceSet(req, res) {
     });
   }
   try {
-    const result = await execCmd(
+    const result = await execFirstSuccess(
       [
-        "nemoclaw", "cluster", "inference", "set",
-        "--provider", providerName,
-        "--model", modelId,
+        cliArgs("inference", "set", "--provider", providerName, "--model", modelId),
+        cliArgs("cluster", "inference", "set", "--provider", providerName, "--model", modelId),
       ],
       30000
     );
@@ -1239,10 +1266,10 @@ async function handleConnectionDetails(req, res) {
     gatewayPort: 8080,
     instructions: {
       install:
-        "curl -fsSL https://github.com/NVIDIA/NemoClaw/releases/download/devel/install.sh | sh",
-      connect: `nemoclaw gateway add ${gatewayUrl}`,
-      createSandbox: "nemoclaw sandbox create -- claude",
-      tui: "nemoclaw term",
+        "curl -fsSL https://github.com/NVIDIA/OpenShell/releases/download/devel/install.sh | sh",
+      connect: `openshell gateway add ${gatewayUrl}`,
+      createSandbox: "openshell sandbox create -- claude",
+      tui: "openshell term",
     },
   });
 }
@@ -1522,7 +1549,7 @@ function _setMocksForTesting(mocks) {
 if (require.main === module) {
   bootstrapConfigCache();
   server.listen(PORT, "", () => {
-    console.log(`NemoClaw Welcome UI → http://localhost:${PORT}`);
+    console.log(`OpenShell Welcome UI -> http://localhost:${PORT}`);
   });
 }
 

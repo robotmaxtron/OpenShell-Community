@@ -159,7 +159,7 @@
    *  2. API valid  + tasks running        -> "Provisioning Sandbox…"     (disabled, spinner)
    *  3. API empty  + tasks complete       -> "Waiting for API key…"      (disabled)
    *  4. API valid  + sandbox ready + !key -> "Configuring API key…"      (disabled, spinner)
-   *  5. API valid  + sandbox ready + key  -> "Open NemoClaw"             (enabled)
+   *  5. API valid  + sandbox ready + key  -> "Open OpenShell"            (enabled)
    */
   function updateButtonState() {
     const keyValid = isApiKeyValid();
@@ -191,7 +191,7 @@
       btnLaunch.classList.add("btn--ready");
       btnSpinner.hidden = true;
       btnSpinner.style.display = "none";
-      btnLaunchLabel.textContent = "Open NemoClaw";
+      btnLaunchLabel.textContent = "Open OpenShell";
     } else if (sandboxReady && keyValid && !keyInjected) {
       btnLaunch.disabled = true;
       btnLaunch.classList.remove("btn--ready");
@@ -249,7 +249,7 @@
 
       setLogIcon(logSandboxIcon, "done");
       logSandbox.querySelector(".console__text").textContent =
-        "Secure NemoClaw sandbox created.";
+        "Secure OpenShell sandbox created.";
       setLogIcon(logGatewayIcon, "spin");
       startPolling();
     } catch {
@@ -314,7 +314,7 @@
     setLogIcon(logSandboxIcon, null);
     setLogIcon(logGatewayIcon, null);
     logSandbox.querySelector(".console__text").textContent =
-      "Initializing secure NemoClaw sandbox...";
+      "Initializing secure OpenShell sandbox...";
     logGateway.querySelector(".console__text").textContent =
       "Launching OpenClaw agent gateway...";
     logReady.hidden = true;
@@ -346,7 +346,7 @@
 
         setLogIcon(logSandboxIcon, "done");
         logSandbox.querySelector(".console__text").textContent =
-          "Secure NemoClaw sandbox created.";
+          "Secure OpenShell sandbox created.";
         setLogIcon(logGatewayIcon, "done");
         logGateway.querySelector(".console__text").textContent =
           "OpenClaw agent gateway online.";
@@ -361,7 +361,7 @@
 
         setLogIcon(logSandboxIcon, "done");
         logSandbox.querySelector(".console__text").textContent =
-          "Secure NemoClaw sandbox created.";
+          "Secure OpenShell sandbox created.";
         setLogIcon(logGatewayIcon, "spin");
         updateButtonState();
 
@@ -379,11 +379,11 @@
     try {
       const res = await fetch("/api/connection-details");
       const data = await res.json();
-      const cmd = `nemoclaw cluster connect ${data.hostname}`;
+      const cmd = data.instructions?.connect || `openshell gateway add ${data.gatewayUrl}`;
       connectCmd.textContent = cmd;
       copyConnect.dataset.copy = cmd;
     } catch {
-      connectCmd.textContent = "nemoclaw cluster connect <hostname>";
+      connectCmd.textContent = "openshell gateway add <gateway-url>";
     }
   }
 

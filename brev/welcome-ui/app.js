@@ -152,6 +152,9 @@
     updateButtonState();
     const key = apiKeyInput.value.trim();
     if (!isApiKeyValid()) return;
+    if (!sandboxReady && !installTriggered && !installFailed) {
+      triggerInstall();
+    }
     if (injectTimer) clearTimeout(injectTimer);
     injectTimer = setTimeout(() => submitKeyForInjection(key), 300);
   }
@@ -417,9 +420,6 @@
       installMain.hidden = true;
     } else {
       showMainView();
-    }
-    if (!installTriggered && !installFailed) {
-      triggerInstall();
     }
     apiKeyInput.focus();
     updateButtonState();

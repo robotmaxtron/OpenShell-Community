@@ -221,7 +221,8 @@ install_cli_from_release() {
       archive="$tmpdir/$pattern"
       tar xzf "$archive" -C "$tmpdir"
       sudo install -m 755 "$tmpdir/$candidate" "/usr/local/bin/$candidate"
-      echo "$candidate"
+      CLI_BIN="$candidate"
+      log "Installed CLI from release: $CLI_BIN"
       return 0
     fi
   done
@@ -231,6 +232,8 @@ install_cli_from_release() {
 }
 
 resolve_cli() {
+  log "Checking for installed CLI binaries..."
+
   if [[ -n "$CLI_BIN" ]]; then
     require_cmd "$CLI_BIN"
     log "Using CLI from CLI_BIN: $CLI_BIN"
@@ -254,7 +257,7 @@ resolve_cli() {
     exit 1
   fi
 
-  CLI_BIN="$(install_cli_from_release)"
+  install_cli_from_release
 }
 
 ensure_cli_compat_aliases() {

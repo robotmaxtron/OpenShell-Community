@@ -35,6 +35,9 @@ const CLI_BIN = process.env.CLI_BIN || "openshell";
 const SANDBOX_DIR = path.join(REPO_ROOT, "sandboxes", "nemoclaw");
 const SANDBOX_NAME = process.env.SANDBOX_NAME || "nemoclaw";
 const SANDBOX_START_CMD = process.env.SANDBOX_START_CMD || "nemoclaw-start";
+const SANDBOX_BASE_IMAGE =
+  process.env.SANDBOX_BASE_IMAGE ||
+  "ghcr.io/nvidia/openshell-community/sandboxes/openclaw:latest";
 const POLICY_FILE = path.join(SANDBOX_DIR, "policy.yaml");
 
 const LOG_FILE = "/tmp/nemoclaw-sandbox-create.log";
@@ -589,6 +592,18 @@ async function cleanupExistingSandbox() {
   }
 }
 
+async function ensureSandboxBaseImage() {
+  logWelcome(`Pre-pulling sandbox base image: ${SANDBOX_BASE_IMAGE}`);
+  const result = await execCmd(["docker", "pull", SANDBOX_BASE_IMAGE], 300000);
+  if (result.code !== 0) {
+    const errMsg = (result.stderr || result.stdout || "docker pull failed").trim();
+    logWelcome(`Base image pull failed: ${errMsg}`);
+    return { ok: false, error: errMsg };
+  }
+  logWelcome(`Base image available locally: ${SANDBOX_BASE_IMAGE}`);
+  return { ok: true };
+}
+
 function runSandboxCreate() {
   sandboxState.status = "creating";
   sandboxState.error = null;
@@ -597,6 +612,14 @@ function runSandboxCreate() {
   (async () => {
     try {
       await cleanupExistingSandbox();
+
+      const baseImage = await ensureSandboxBaseImage();
+      if (!baseImage.ok) {
+        sandboxState.status = "error";
+        sandboxState.error =
+          `Sandbox base image pull failed. ${baseImage.error}`;
+        return;
+      }
 
       const chatUiUrl = buildOpenclawUrl(null);
       const policyPath = await generateGatewayPolicy();

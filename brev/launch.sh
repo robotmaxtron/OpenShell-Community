@@ -41,6 +41,14 @@ log() {
   printf '[launch.sh] %s\n' "$*"
 }
 
+require_non_root() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    log "Do not run the full launcher as root."
+    log "Run it as the target user and let the script use sudo only where required."
+    exit 1
+  fi
+}
+
 step() {
   printf '\n[launch.sh] === %s ===\n' "$*"
 }
@@ -181,7 +189,7 @@ docker_login_ghcr_for_user() {
 
   if [[ "$login_user" == "root" ]]; then
     log "Logging into ghcr.io as $GHCR_USER for root ..."
-    if printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
+    if printf '%s\n' "$GITHUB_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
       log "GHCR login succeeded for root."
       return 0
     fi
@@ -190,6 +198,15 @@ docker_login_ghcr_for_user() {
   fi
 
   log "Logging into ghcr.io as $GHCR_USER for user $login_user ..."
+  if [[ "$login_user" == "$(id -un)" ]]; then
+    if printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
+      log "GHCR login succeeded for user $login_user."
+      return 0
+    fi
+    log "GHCR login failed for user $login_user."
+    return 1
+  fi
+
   if sudo -H -u "$login_user" env GITHUB_TOKEN="$GITHUB_TOKEN" GHCR_USER="$GHCR_USER" bash -lc \
     'printf "%s\n" "$GITHUB_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1'; then
     log "GHCR login succeeded for user $login_user."
@@ -516,6 +533,7 @@ start_welcome_ui() {
 }
 
 main() {
+  require_non_root
   require_cmd tar
   require_cmd sudo
 

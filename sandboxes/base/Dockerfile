@@ -20,7 +20,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 WORKDIR /sandbox
 
 # Core system dependencies
-# python3 + pip: agent scripting and SDK usage
+# python3.13 + pip: agent scripting and SDK usage (deadsnakes PPA for Noble)
 # iproute2: network namespace management (ip netns, veth pairs)
 # dnsutils: dig, nslookup
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -31,10 +31,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         iputils-ping \
         net-tools \
         netcat-openbsd \
-        python3 \
-        python3-pip \
-        python3-venv \
+        openssh-sftp-server \
+        procps \
+        software-properties-common \
         traceroute \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.13 \
+        python3.13-venv \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.13 \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.13 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.13 1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create supervisor and sandbox users/groups
@@ -53,6 +61,11 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
         vim-tiny \
         nano \
     && rm -rf /var/lib/apt/lists/*
+
+# Fix transitive tar vulnerabilities (GHSA-qffp-2rhf-9h96,
+# GHSA-9ppj-qmqm-q256, GHSA-8qq5-rm4j-mr97, GHSA-r6q2-hw4h-h46w,
+# GHSA-34x7-hfp2-rc4v, GHSA-83g3-92jg-28cx).
+RUN npm install -g tar@7.5.11
 
 # GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

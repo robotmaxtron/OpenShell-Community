@@ -1,5 +1,5 @@
 /* ============================================
-   NemoClaw Welcome UI — NVIDIA build.nvidia.com style
+   OpenShell Welcome UI — NVIDIA build.nvidia.com style
    Primary green: #76B900
    ============================================ */
 
@@ -81,8 +81,11 @@ body {
 }
 
 .topbar__logo {
-  height: 26px;
-  width: auto;
+  height: 28px;
+  width: 28px;
+  flex-shrink: 0;
+  display: block;
+  filter: drop-shadow(0 0 12px rgba(118, 185, 0, 0.18));
 }
 
 .topbar__divider {

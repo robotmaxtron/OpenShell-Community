@@ -27,6 +27,8 @@ LAUNCH_LOG="${LAUNCH_LOG:-/tmp/openshell-launch.log}"
 WAIT_TIMEOUT_SECS="${WAIT_TIMEOUT_SECS:-30}"
 CLI_RETRY_COUNT="${CLI_RETRY_COUNT:-5}"
 CLI_RETRY_DELAY_SECS="${CLI_RETRY_DELAY_SECS:-3}"
+GHCR_LOGIN="${GHCR_LOGIN:-auto}"
+GHCR_USER="${GHCR_USER:-}"
 
 mkdir -p "$(dirname "$LAUNCH_LOG")"
 touch "$LAUNCH_LOG"
@@ -153,6 +155,52 @@ gh_auth_if_needed() {
     log "GitHub authentication failed."
     exit 1
   fi
+}
+
+resolve_ghcr_user() {
+  if [[ -n "$GHCR_USER" ]]; then
+    return 0
+  fi
+
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    GHCR_USER="$(gh api user -q .login 2>/dev/null || true)"
+  fi
+
+  if [[ -z "$GHCR_USER" ]]; then
+    GHCR_USER="${GITHUB_USER:-${USER:-}}"
+  fi
+
+  [[ -n "$GHCR_USER" ]]
+}
+
+docker_login_ghcr_if_needed() {
+  if [[ "$GHCR_LOGIN" == "0" || "$GHCR_LOGIN" == "false" || "$GHCR_LOGIN" == "no" ]]; then
+    log "Skipping GHCR login by configuration."
+    return
+  fi
+
+  if [[ -z "$GITHUB_TOKEN" ]]; then
+    log "No GitHub token available; skipping GHCR login."
+    return
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    log "Docker not available; skipping GHCR login."
+    return
+  fi
+
+  if ! resolve_ghcr_user; then
+    log "Could not determine GHCR username; skipping GHCR login."
+    return
+  fi
+
+  log "Logging into ghcr.io as $GHCR_USER ..."
+  if printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
+    log "GHCR login succeeded."
+    return
+  fi
+
+  log "GHCR login failed. Continuing, but private image pulls may fail."
 }
 
 checkout_repo_ref() {
@@ -443,6 +491,8 @@ main() {
   step "Resolving CLI"
   resolve_cli
   ensure_cli_compat_aliases
+  step "Authenticating registries"
+  docker_login_ghcr_if_needed
   step "Ensuring Node.js"
   ensure_node
 

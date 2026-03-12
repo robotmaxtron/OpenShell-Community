@@ -240,6 +240,18 @@
     errorMessage.textContent = msg;
   }
 
+  function setSandboxChecklistCreating() {
+    setLogIcon(logSandboxIcon, "spin");
+    logSandbox.querySelector(".console__text").textContent =
+      "Provisioning secure OpenShell sandbox...";
+  }
+
+  function setSandboxChecklistReady() {
+    setLogIcon(logSandboxIcon, "done");
+    logSandbox.querySelector(".console__text").textContent =
+      "Secure OpenShell sandbox created.";
+  }
+
   async function triggerInstall() {
     if (installTriggered) return;
     installTriggered = true;
@@ -262,9 +274,7 @@
         return;
       }
 
-      setLogIcon(logSandboxIcon, "done");
-      logSandbox.querySelector(".console__text").textContent =
-        "Secure OpenShell sandbox created.";
+      setSandboxChecklistCreating();
       setLogIcon(logGatewayIcon, "spin");
       startPolling();
     } catch {
@@ -294,6 +304,7 @@
           sandboxReady = true;
           sandboxUrl = data.url || null;
 
+          setSandboxChecklistReady();
           setLogIcon(logGatewayIcon, "done");
           logGateway.querySelector(".console__text").textContent =
             "OpenClaw agent gateway online.";
@@ -368,9 +379,7 @@
         sandboxUrl = data.url;
         installTriggered = true;
 
-        setLogIcon(logSandboxIcon, "done");
-        logSandbox.querySelector(".console__text").textContent =
-          "Secure OpenShell sandbox created.";
+        setSandboxChecklistReady();
         setLogIcon(logGatewayIcon, "done");
         logGateway.querySelector(".console__text").textContent =
           "OpenClaw agent gateway online.";
@@ -383,9 +392,7 @@
       } else if (data.status === "creating") {
         installTriggered = true;
 
-        setLogIcon(logSandboxIcon, "done");
-        logSandbox.querySelector(".console__text").textContent =
-          "Secure OpenShell sandbox created.";
+        setSandboxChecklistCreating();
         setLogIcon(logGatewayIcon, "spin");
         updateButtonState();
 

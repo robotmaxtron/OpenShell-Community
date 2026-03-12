@@ -173,7 +173,32 @@ resolve_ghcr_user() {
   [[ -n "$GHCR_USER" ]]
 }
 
+docker_login_ghcr_for_user() {
+  local login_user="$1"
+
+  if [[ "$login_user" == "root" ]]; then
+    log "Logging into ghcr.io as $GHCR_USER for root ..."
+    if printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
+      log "GHCR login succeeded for root."
+      return 0
+    fi
+    log "GHCR login failed for root."
+    return 1
+  fi
+
+  log "Logging into ghcr.io as $GHCR_USER for user $login_user ..."
+  if sudo -H -u "$login_user" env GITHUB_TOKEN="$GITHUB_TOKEN" GHCR_USER="$GHCR_USER" bash -lc \
+    'printf "%s\n" "$GITHUB_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1'; then
+    log "GHCR login succeeded for user $login_user."
+    return 0
+  fi
+  log "GHCR login failed for user $login_user."
+  return 1
+}
+
 docker_login_ghcr_if_needed() {
+  local login_failed=0
+
   if [[ "$GHCR_LOGIN" == "0" || "$GHCR_LOGIN" == "false" || "$GHCR_LOGIN" == "no" ]]; then
     log "Skipping GHCR login by configuration."
     return
@@ -194,13 +219,17 @@ docker_login_ghcr_if_needed() {
     return
   fi
 
-  log "Logging into ghcr.io as $GHCR_USER ..."
-  if printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
-    log "GHCR login succeeded."
-    return
+  docker_login_ghcr_for_user "root" || login_failed=1
+
+  if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+    docker_login_ghcr_for_user "$SUDO_USER" || login_failed=1
+  elif [[ "$(id -un)" != "root" ]]; then
+    docker_login_ghcr_for_user "$(id -un)" || login_failed=1
   fi
 
-  log "GHCR login failed. Continuing, but private image pulls may fail."
+  if [[ "$login_failed" -ne 0 ]]; then
+    log "One or more GHCR logins failed. Continuing, but private image pulls may fail."
+  fi
 }
 
 checkout_repo_ref() {

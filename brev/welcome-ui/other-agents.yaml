@@ -21,38 +21,38 @@ title: Bring Your Own Agent
 
 intro: >-
   Connect from your laptop, create a sandbox, and run any agent inside it.
-  The NemoClaw TUI on your machine surfaces policy recommendations from the agent.
+  The OpenShell TUI on your machine surfaces policy recommendations from the agent.
   You approve or deny &mdash; the sandbox boundary is never violated.
 
 steps:
-  - title: Install NemoClaw CLI
+  - title: Install OpenShell CLI
     commands:
-      - "curl -fsSL https://github.com/NVIDIA/NemoClaw/releases/download/devel/install.sh | sh"
+      - "curl -fsSL https://github.com/NVIDIA/OpenShell/releases/download/devel/install.sh | sh"
     copyable: true
 
   - title: Add the gateway
     block_id: connect-cmd-block
     commands:
-      - cmd: "nemoclaw gateway add <loading...>"
+      - cmd: "openshell gateway add <loading...>"
         id: connect-cmd
     copy_button_id: copy-connect
     copyable: true
     description: >-
       This will initiate a JWT auth flow in your browser.
-      Once authorized, you can run any NemoClaw command against this deployment.
+      Once authorized, you can run any OpenShell command against this deployment.
 
   - title: Create a sandbox and run your agent
     commands:
       - comment: Claude Code
-        cmd: "nemoclaw sandbox create -- claude"
+        cmd: "openshell sandbox create -- claude"
       - comment: OpenCode
-        cmd: "nemoclaw sandbox create -- opencode"
+        cmd: "openshell sandbox create -- opencode"
       - comment: Codex
-        cmd: "nemoclaw sandbox create -- codex"
+        cmd: "openshell sandbox create -- codex"
 
   - title: Manage policies with the TUI
     commands:
-      - nemoclaw term
+      - openshell term
     copyable: true
     description: >-
       When your agent hits a policy denial, it reads the policy, diagnoses the block,

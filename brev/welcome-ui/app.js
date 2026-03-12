@@ -120,6 +120,8 @@
   let injectInFlight = false;
   let injectTimer = null;
   let lastSubmittedKey = "";
+  let keyInjectError = "";
+  let installFailed = false;
 
   function stopPolling() {
     if (pollTimer) {
@@ -132,6 +134,7 @@
     if (key === lastSubmittedKey) return;
     lastSubmittedKey = key;
     keyInjected = false;
+    keyInjectError = "";
     injectInFlight = true;
     updateButtonState();
     try {
@@ -149,6 +152,9 @@
     updateButtonState();
     const key = apiKeyInput.value.trim();
     if (!isApiKeyValid()) return;
+    if (!sandboxReady && !installTriggered && !installFailed) {
+      triggerInstall();
+    }
     if (injectTimer) clearTimeout(injectTimer);
     injectTimer = setTimeout(() => submitKeyForInjection(key), 300);
   }
@@ -159,7 +165,7 @@
    *  2. API valid  + tasks running        -> "Provisioning Sandbox…"     (disabled, spinner)
    *  3. API empty  + tasks complete       -> "Waiting for API key…"      (disabled)
    *  4. API valid  + sandbox ready + !key -> "Configuring API key…"      (disabled, spinner)
-   *  5. API valid  + sandbox ready + key  -> "Open NemoClaw"             (enabled)
+   *  5. API valid  + sandbox ready + key  -> "Open OpenShell"            (enabled)
    */
   function updateButtonState() {
     const keyValid = isApiKeyValid();
@@ -169,6 +175,9 @@
     if (keyRaw.length === 0) {
       keyHint.textContent = "";
       keyHint.className = "form-field__hint";
+    } else if (keyInjectError) {
+      keyHint.textContent = keyInjectError;
+      keyHint.className = "form-field__hint form-field__hint--warn";
     } else if (keyValid) {
       keyHint.textContent = "Valid key format";
       keyHint.className = "form-field__hint form-field__hint--ok";
@@ -191,13 +200,19 @@
       btnLaunch.classList.add("btn--ready");
       btnSpinner.hidden = true;
       btnSpinner.style.display = "none";
-      btnLaunchLabel.textContent = "Open NemoClaw";
-    } else if (sandboxReady && keyValid && !keyInjected) {
+      btnLaunchLabel.textContent = "Open OpenShell";
+    } else if (sandboxReady && keyValid && !keyInjected && (injectInFlight || !keyInjectError)) {
       btnLaunch.disabled = true;
       btnLaunch.classList.remove("btn--ready");
       btnSpinner.hidden = false;
       btnSpinner.style.display = "";
       btnLaunchLabel.textContent = "Configuring API key\u2026";
+    } else if (sandboxReady && keyValid && !keyInjected) {
+      btnLaunch.disabled = true;
+      btnLaunch.classList.remove("btn--ready");
+      btnSpinner.hidden = true;
+      btnSpinner.style.display = "none";
+      btnLaunchLabel.textContent = "Update API key to retry";
     } else if (!sandboxReady && keyValid) {
       btnLaunch.disabled = true;
       btnLaunch.classList.remove("btn--ready");
@@ -225,6 +240,18 @@
     errorMessage.textContent = msg;
   }
 
+  function setSandboxChecklistCreating() {
+    setLogIcon(logSandboxIcon, "spin");
+    logSandbox.querySelector(".console__text").textContent =
+      "Provisioning secure OpenShell sandbox...";
+  }
+
+  function setSandboxChecklistReady() {
+    setLogIcon(logSandboxIcon, "done");
+    logSandbox.querySelector(".console__text").textContent =
+      "Secure OpenShell sandbox created.";
+  }
+
   async function triggerInstall() {
     if (installTriggered) return;
     installTriggered = true;
@@ -247,9 +274,7 @@
         return;
       }
 
-      setLogIcon(logSandboxIcon, "done");
-      logSandbox.querySelector(".console__text").textContent =
-        "Secure NemoClaw sandbox created.";
+      setSandboxChecklistCreating();
       setLogIcon(logGatewayIcon, "spin");
       startPolling();
     } catch {
@@ -268,11 +293,18 @@
         if (!injectInFlight) {
           keyInjected = !!data.key_injected;
         }
+        keyInjectError = data.key_inject_error || "";
+        if (keyInjectError) {
+          injectInFlight = false;
+          keyInjected = false;
+          lastSubmittedKey = "";
+        }
 
         if (data.status === "running") {
           sandboxReady = true;
           sandboxUrl = data.url || null;
 
+          setSandboxChecklistReady();
           setLogIcon(logGatewayIcon, "done");
           logGateway.querySelector(".console__text").textContent =
             "OpenClaw agent gateway online.";
@@ -284,6 +316,7 @@
         } else if (data.status === "error") {
           stopPolling();
           installTriggered = false;
+          installFailed = true;
           showError(data.error || "Sandbox creation failed");
         } else {
           updateButtonState();
@@ -308,13 +341,15 @@
     sandboxUrl = null;
     installTriggered = false;
     keyInjected = false;
+    keyInjectError = "";
+    installFailed = false;
     lastSubmittedKey = "";
     stopPolling();
 
     setLogIcon(logSandboxIcon, null);
     setLogIcon(logGatewayIcon, null);
     logSandbox.querySelector(".console__text").textContent =
-      "Initializing secure NemoClaw sandbox...";
+      "Initializing secure OpenShell sandbox...";
     logGateway.querySelector(".console__text").textContent =
       "Launching OpenClaw agent gateway...";
     logReady.hidden = true;
@@ -344,9 +379,7 @@
         sandboxUrl = data.url;
         installTriggered = true;
 
-        setLogIcon(logSandboxIcon, "done");
-        logSandbox.querySelector(".console__text").textContent =
-          "Secure NemoClaw sandbox created.";
+        setSandboxChecklistReady();
         setLogIcon(logGatewayIcon, "done");
         logGateway.querySelector(".console__text").textContent =
           "OpenClaw agent gateway online.";
@@ -359,9 +392,7 @@
       } else if (data.status === "creating") {
         installTriggered = true;
 
-        setLogIcon(logSandboxIcon, "done");
-        logSandbox.querySelector(".console__text").textContent =
-          "Secure NemoClaw sandbox created.";
+        setSandboxChecklistCreating();
         setLogIcon(logGatewayIcon, "spin");
         updateButtonState();
 
@@ -379,11 +410,11 @@
     try {
       const res = await fetch("/api/connection-details");
       const data = await res.json();
-      const cmd = `nemoclaw cluster connect ${data.hostname}`;
+      const cmd = data.instructions?.connect || `openshell gateway add ${data.gatewayUrl}`;
       connectCmd.textContent = cmd;
       copyConnect.dataset.copy = cmd;
     } catch {
-      connectCmd.textContent = "nemoclaw cluster connect <hostname>";
+      connectCmd.textContent = "openshell gateway add <gateway-url>";
     }
   }
 
@@ -391,9 +422,11 @@
 
   cardOpenclaw.addEventListener("click", () => {
     showOverlay(overlayInstall);
-    showMainView();
-    if (!installTriggered) {
-      triggerInstall();
+    if (installFailed) {
+      stepError.hidden = false;
+      installMain.hidden = true;
+    } else {
+      showMainView();
     }
     apiKeyInput.focus();
     updateButtonState();

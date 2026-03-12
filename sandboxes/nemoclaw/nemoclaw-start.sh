@@ -48,6 +48,12 @@ if [ -z "${CHAT_UI_URL:-}" ]; then
     exit 1
 fi
 
+# Keep local service-to-service traffic off the sandbox forward proxy.
+# LiteLLM/OpenClaw must talk to 127.0.0.1 directly, while upstream NVIDIA
+# requests should continue using the configured HTTP(S) proxy.
+export NO_PROXY="${NO_PROXY:+${NO_PROXY},}127.0.0.1,localhost,::1"
+export no_proxy="${no_proxy:+${no_proxy},}127.0.0.1,localhost,::1"
+
 BUNDLE="$(npm root -g)/openclaw/dist/control-ui/assets/nemoclaw-devx.js"
 
 if [ -f "$BUNDLE" ]; then
@@ -235,6 +241,26 @@ echo "[gateway] policy-proxy launched (pid $!) upstream=${INTERNAL_GATEWAY_PORT}
 # before the user notices the "pairing required" prompt in the Control UI.
 (
   echo "[auto-pair] watcher starting"
+  _json_has_approval() {
+    jq -e '
+      .device
+      | objects
+      | (.approvedAtMs? // empty) or ((.tokens? // []) | length > 0)
+    ' >/dev/null 2>&1
+  }
+
+  _summarize_device_list() {
+    jq -r '
+      def labels($entries):
+        ($entries // [])
+        | map(select(type == "object" and (.deviceId? // "") != "")
+          | "\((.clientId // "unknown")):\((.deviceId // "")[0:12])");
+      (labels(.pending)) as $pending
+      | (labels(.paired)) as $paired
+      | "pending=\($pending | length) [\(($pending | if length > 0 then join(", ") else "-" end))] paired=\($paired | length) [\(($paired | if length > 0 then join(", ") else "-" end))]"
+    ' 2>/dev/null || echo "unparseable"
+  }
+
   _pair_deadline=$(($(date +%s) + 300))
   _pair_attempts=0
   _pair_approved=0
@@ -244,20 +270,22 @@ echo "[gateway] policy-proxy launched (pid $!) upstream=${INTERNAL_GATEWAY_PORT}
     _pair_attempts=$((_pair_attempts + 1))
     _approve_output="$(openclaw devices approve --latest --json 2>&1 || true)"
 
-    if printf '%s\n' "$_approve_output" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+    if printf '%s\n' "$_approve_output" | _json_has_approval; then
       _pair_approved=$((_pair_approved + 1))
-      echo "[auto-pair] Approved pending device pairing request: ${_approve_output}"
+      _approved_device_id="$(printf '%s\n' "$_approve_output" | jq -r '.device.deviceId // ""' 2>/dev/null | cut -c1-12)"
+      echo "[auto-pair] approved request attempts=${_pair_attempts} count=${_pair_approved} device=${_approved_device_id:-unknown}"
       continue
     fi
 
     if [ -n "$_approve_output" ] && ! printf '%s\n' "$_approve_output" | grep -qiE 'no pending|no device|not paired|nothing to approve'; then
       _pair_errors=$((_pair_errors + 1))
-      echo "[auto-pair] approve --latest returned non-success output: ${_approve_output}"
+      echo "[auto-pair] approve --latest unexpected output attempts=${_pair_attempts} errors=${_pair_errors}: ${_approve_output}"
     fi
 
     if [ $((_pair_attempts % 20)) -eq 0 ]; then
       _list_output="$(openclaw devices list --json 2>&1 || true)"
-      echo "[auto-pair] heartbeat attempts=${_pair_attempts} approved=${_pair_approved} errors=${_pair_errors} devices=${_list_output}"
+      _device_summary="$(printf '%s\n' "$_list_output" | _summarize_device_list)"
+      echo "[auto-pair] heartbeat attempts=${_pair_attempts} approved=${_pair_approved} errors=${_pair_errors} ${_device_summary}"
     fi
   done
   echo "[auto-pair] watcher exiting attempts=${_pair_attempts} approved=${_pair_approved} errors=${_pair_errors}"

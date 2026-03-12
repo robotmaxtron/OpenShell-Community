@@ -18,6 +18,9 @@ import { ingestKeysFromUrl, DEFAULT_MODEL, resolveApiKey, isKeyConfigured } from
 import { waitForReconnect } from "./gateway-bridge.ts";
 import { syncKeysToProviders } from "./api-keys-page.ts";
 
+const INITIAL_CONNECT_TIMEOUT_MS = 30_000;
+const POST_PAIRING_SETTLE_DELAY_MS = 15_000;
+
 function inject(): boolean {
   const hasButton = injectButton();
   const hasNav = injectNavGroup();
@@ -56,6 +59,11 @@ function showConnectOverlay(): void {
   document.body.prepend(overlay);
 }
 
+function setConnectOverlayText(text: string): void {
+  const textNode = document.querySelector<HTMLElement>(".nemoclaw-connect-overlay__text");
+  if (textNode) textNode.textContent = text;
+}
+
 function revealApp(): void {
   document.body.setAttribute("data-nemoclaw-ready", "");
   const overlay = document.querySelector(".nemoclaw-connect-overlay");
@@ -68,8 +76,12 @@ function revealApp(): void {
 function bootstrap() {
   showConnectOverlay();
 
-  waitForReconnect(30_000)
-    .then(revealApp)
+  waitForReconnect(INITIAL_CONNECT_TIMEOUT_MS)
+    .then(async () => {
+      setConnectOverlayText("Device pairing approved. Finalizing dashboard...");
+      await new Promise((resolve) => setTimeout(resolve, POST_PAIRING_SETTLE_DELAY_MS));
+      revealApp();
+    })
     .catch(revealApp);
 
   const keysIngested = ingestKeysFromUrl();

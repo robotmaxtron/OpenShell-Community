@@ -16,6 +16,10 @@ FROM ${BASE_IMAGE}
 
 USER root
 
+# Override the startup script with our version (adds runtime API key injection)
+COPY nemoclaw-start.sh /usr/local/bin/nemoclaw-start
+RUN chmod +x /usr/local/bin/nemoclaw-start
+
 # Install the policy reverse proxy (sits in front of the OpenClaw gateway,
 # intercepts /api/policy to read/write the sandbox policy file) and its
 # runtime dependencies for gRPC gateway sync.
@@ -25,10 +29,6 @@ RUN npm install -g @grpc/grpc-js @grpc/proto-loader js-yaml
 
 # Fix @hono/node-server authorization bypass (GHSA-wc8c-qw6v-h7f6)
 RUN npm install -g @hono/node-server@1.19.11
-
-# Allow the sandbox user to read the default policy (the startup script
-# copies it to a writable location; this chown covers non-Landlock envs)
-RUN mkdir -p /etc/openshell && chown -R sandbox:sandbox /etc/openshell
 
 # Stage the NeMoClaw DevX extension source
 COPY nemoclaw-ui-extension/extension/ /opt/nemoclaw-devx/

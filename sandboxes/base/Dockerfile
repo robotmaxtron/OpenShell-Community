@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.4
+# syntax=docker/dockerfile:1
 
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -20,9 +20,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 WORKDIR /sandbox
 
 # Core system dependencies
-# python3.13 + pip: agent scripting and SDK usage (deadsnakes PPA for Noble)
 # iproute2: network namespace management (ip netns, veth pairs)
 # dnsutils: dig, nslookup
+# Python is managed entirely by uv (see devtools stage).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
@@ -33,17 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         netcat-openbsd \
         openssh-sftp-server \
         procps \
-        software-properties-common \
         traceroute \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        python3.13 \
-        python3.13-venv \
-        python3.13-dev \
-    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.13 \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.13 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.13 1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create supervisor and sandbox users/groups
@@ -57,6 +47,11 @@ FROM system AS devtools
 # Pin to a specific patch version for reproducible builds.
 # CVE-2026-21637, CVE-2025-59466, CVE-2025-59465, CVE-2025-55131 affect
 # Node.js <= 22.22.1. Update to 22.23.0+ when a patched release ships.
+#
+# npm is upgraded to v11 in the same layer to avoid caching the old npm.
+# npm 11 ships tar@^7.5.9, fixing tar@6.2.1 vulns bundled in npm 10
+# (GHSA-r6q2-hw4h-h46w, GHSA-8qq5-rm4j-mr97, GHSA-83g3-92jg-28cx,
+# GHSA-34x7-hfp2-rc4v, GHSA-qffp-2rhf-9h96).
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends \
         build-essential \
@@ -64,18 +59,20 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
         nodejs=22.22.1-1nodesource1 \
         vim-tiny \
         nano \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g npm@11.11.0
 
-# Upgrade npm to v11 which ships tar@^7.5.9 (fixes tar@6.2.1 vulns bundled in
-# npm 10: GHSA-r6q2-hw4h-h46w, GHSA-8qq5-rm4j-mr97, GHSA-83g3-92jg-28cx,
-# GHSA-34x7-hfp2-rc4v, GHSA-qffp-2rhf-9h96).
-RUN npm install -g npm@11.11.0
-
-# Fix transitive tar and @hono/node-server vulnerabilities
-# (GHSA-qffp-2rhf-9h96, GHSA-9ppj-qmqm-q256, GHSA-8qq5-rm4j-mr97,
-# GHSA-r6q2-hw4h-h46w, GHSA-34x7-hfp2-rc4v, GHSA-83g3-92jg-28cx,
-# GHSA-wc8c-qw6v-h7f6).
-RUN npm install -g tar@7.5.11 @hono/node-server@1.19.11
+# Global npm packages — pinned for reproducibility.
+# tar + @hono/node-server: transitive vuln fixes
+#   (GHSA-qffp-2rhf-9h96, GHSA-9ppj-qmqm-q256, GHSA-8qq5-rm4j-mr97,
+#    GHSA-r6q2-hw4h-h46w, GHSA-34x7-hfp2-rc4v, GHSA-83g3-92jg-28cx,
+#    GHSA-wc8c-qw6v-h7f6).
+# opencode-ai + @openai/codex: agent CLIs.
+RUN npm install -g \
+        tar@7.5.11 \
+        @hono/node-server@1.19.11 \
+        opencode-ai@1.2.18 \
+        @openai/codex@0.111.0
 
 # GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -90,12 +87,14 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
     && cp /root/.local/bin/claude /usr/local/bin/claude \
     && chmod 755 /usr/local/bin/claude
 
-# Install OpenCode CLI and Codex CLI (OpenAI) with pinned versions for
-# reproducible builds.
-RUN npm install -g opencode-ai@1.2.18 @openai/codex@0.111.0
-
-# uv (Python package manager) — pinned for reproducibility
+# uv (Python package/project manager) — pinned for reproducibility.
+# uv manages the Python toolchain; no system Python packages are needed.
 COPY --from=ghcr.io/astral-sh/uv:0.10.8 /uv /usr/local/bin/uv
+ENV UV_PYTHON_INSTALL_DIR="/sandbox/.uv/python"
+RUN uv python install 3.13 && \
+    ln -s $(uv python find 3.13) /usr/local/bin/python3 && \
+    ln -s $(uv python find 3.13) /usr/local/bin/python && \
+    uv cache clean
 
 # Final base image
 FROM devtools AS final
@@ -105,11 +104,10 @@ FROM devtools AS final
 # VIRTUAL_ENV and UV_PYTHON_INSTALL_DIR are also exported in .bashrc
 # so that login shell sessions (interactive and exec) see them.
 ENV PATH="/sandbox/.venv/bin:/usr/local/bin:/usr/bin:/bin" \
-    VIRTUAL_ENV="/sandbox/.venv" \
-    UV_PYTHON_INSTALL_DIR="/sandbox/.uv/python"
+    VIRTUAL_ENV="/sandbox/.venv"
 
-# Ensure policy directory exists
-RUN mkdir -p /etc/navigator
+# Default sandbox network / filesystem policy
+COPY policy.yaml /etc/navigator/policy.yaml
 
 # Copy custom skills into the image.
 # To add a skill, create a subdirectory under sandboxes/base/skills/
@@ -118,11 +116,12 @@ RUN mkdir -p /etc/navigator
 COPY skills/ /sandbox/.agents/skills/
 
 # Set up sandbox user home directory
-RUN mkdir -p /sandbox/.agents/skills /sandbox/.claude/skills && \
-    # Create a writable venv that inherits all system packages.
-    # Sandbox users can `pip install` or `uv pip install` into
+RUN mkdir -p /sandbox/.claude/skills && \
+    # Create a writable venv using uv-managed Python 3.13.
+    # Sandbox users can `uv pip install` (or `pip install`) into
     # this venv without touching the base image layer.
-    uv venv --python /usr/bin/python3.13 --seed --system-site-packages /sandbox/.venv && \
+    uv venv --python 3.13 --seed /sandbox/.venv && \
+    uv cache clean && \
     chown -R sandbox:sandbox /sandbox/.venv && \
     # Minimal shell init files so interactive and non-interactive shells
     # get a sane PATH and prompt.  Without these, bash sources nothing

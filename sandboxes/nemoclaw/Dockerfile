@@ -32,7 +32,7 @@ RUN npm install -g @hono/node-server@1.19.11
 
 # Allow the sandbox user to read the default policy (the startup script
 # copies it to a writable location; this chown covers non-Landlock envs)
-RUN chown -R sandbox:sandbox /etc/navigator
+RUN chown -R sandbox:sandbox /etc/openshell
 
 # Stage the NeMoClaw DevX extension source
 COPY nemoclaw-ui-extension/extension/ /opt/nemoclaw-devx/

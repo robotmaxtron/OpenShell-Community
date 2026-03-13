@@ -116,7 +116,7 @@ nohup openclaw gateway > /tmp/gateway.log 2>&1 &
 # update it at runtime.  /etc is read-only under Landlock, but /sandbox is
 # read-write, so we use /sandbox/.openclaw/ which is already owned by the
 # sandbox user.
-_POLICY_SRC="/etc/navigator/policy.yaml"
+_POLICY_SRC="/etc/openshell/policy.yaml"
 _POLICY_DST="/sandbox/.openclaw/policy.yaml"
 if [ ! -f "$_POLICY_DST" ] && [ -f "$_POLICY_SRC" ]; then
   cp "$_POLICY_SRC" "$_POLICY_DST" 2>/dev/null || true

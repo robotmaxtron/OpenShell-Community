@@ -15,7 +15,7 @@ const fs = require("fs");
 const os = require("os");
 const net = require("net");
 
-const POLICY_PATH = process.env.POLICY_PATH || "/etc/navigator/policy.yaml";
+const POLICY_PATH = process.env.POLICY_PATH || "/etc/openshell/policy.yaml";
 const UPSTREAM_PORT = parseInt(process.env.UPSTREAM_PORT || "18788", 10);
 const LISTEN_PORT = parseInt(process.env.LISTEN_PORT || "18789", 10);
 const UPSTREAM_HOST = "127.0.0.1";
@@ -26,9 +26,9 @@ const PROTO_DIR = "/usr/local/lib/nemoclaw-proto";
 // platform).  When the proxy runs inside an SSH session the env vars are
 // cleared, but the files on disk remain accessible.
 const TLS_WELL_KNOWN = {
-  ca:   "/etc/navigator-tls/client/ca.crt",
-  cert: "/etc/navigator-tls/client/tls.crt",
-  key:  "/etc/navigator-tls/client/tls.key",
+  ca:   "/etc/openshell-tls/client/ca.crt",
+  cert: "/etc/openshell-tls/client/tls.crt",
+  key:  "/etc/openshell-tls/client/tls.key",
 };
 
 const WELL_KNOWN_ENDPOINT = "https://navigator.navigator.svc.cluster.local:8080";

@@ -107,7 +107,7 @@ ENV PATH="/sandbox/.venv/bin:/usr/local/bin:/usr/bin:/bin" \
     VIRTUAL_ENV="/sandbox/.venv"
 
 # Default sandbox network / filesystem policy
-COPY policy.yaml /etc/navigator/policy.yaml
+COPY policy.yaml /etc/openshell/policy.yaml
 
 # Copy custom skills into the image.
 # To add a skill, create a subdirectory under sandboxes/base/skills/

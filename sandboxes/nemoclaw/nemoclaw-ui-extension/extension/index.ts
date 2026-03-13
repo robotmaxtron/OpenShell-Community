@@ -21,6 +21,7 @@ import { syncKeysToProviders } from "./api-keys-page.ts";
 const INITIAL_CONNECT_TIMEOUT_MS = 30_000;
 const POST_PAIRING_SETTLE_DELAY_MS = 15_000;
 const STABLE_CONNECTION_WINDOW_MS = 3_000;
+const PAIRING_RELOAD_FLAG = "nemoclaw:pairing-bootstrap-reloaded";
 
 function inject(): boolean {
   const hasButton = injectButton();
@@ -74,6 +75,30 @@ function revealApp(): void {
   }
 }
 
+function shouldForcePairingReload(): boolean {
+  try {
+    return sessionStorage.getItem(PAIRING_RELOAD_FLAG) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+function markPairingReloadComplete(): void {
+  try {
+    sessionStorage.setItem(PAIRING_RELOAD_FLAG, "1");
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function clearPairingReloadFlag(): void {
+  try {
+    sessionStorage.removeItem(PAIRING_RELOAD_FLAG);
+  } catch {
+    // ignore storage failures
+  }
+}
+
 function bootstrap() {
   showConnectOverlay();
 
@@ -88,9 +113,19 @@ function bootstrap() {
       } catch {
         await new Promise((resolve) => setTimeout(resolve, POST_PAIRING_SETTLE_DELAY_MS));
       }
+      if (shouldForcePairingReload()) {
+        markPairingReloadComplete();
+        setConnectOverlayText("Device pairing approved. Reloading dashboard...");
+        window.location.reload();
+        return;
+      }
+      clearPairingReloadFlag();
       revealApp();
     })
-    .catch(revealApp);
+    .catch(() => {
+      clearPairingReloadFlag();
+      revealApp();
+    });
 
   const keysIngested = ingestKeysFromUrl();
 

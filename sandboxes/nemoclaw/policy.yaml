@@ -36,6 +36,20 @@ process:
 # SHA256 integrity is enforced in Rust via trust-on-first-use, not here.
 
 network_policies:
+  allow_navigator_navigator_svc_cluster_local_8080:
+    name: allow_navigator_navigator_svc_cluster_local_8080
+    endpoints:
+    - host: navigator.navigator.svc.cluster.local
+      port: 8080
+    binaries:
+    - path: /usr/bin/node
+  allow_registry_npmjs_org_443:
+    name: allow_registry_npmjs_org_443
+    endpoints:
+    - host: registry.npmjs.org
+      port: 443
+    binaries:
+    - path: /usr/bin/node
   claude_code:
     name: claude_code
     endpoints:

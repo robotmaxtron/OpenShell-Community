@@ -639,6 +639,15 @@ function runSandboxCreate() {
       ];
       if (policyPath) cmd.push("--policy", policyPath);
       const envArgs = [`CHAT_UI_URL=${chatUiUrl}`];
+      const loopbackNoProxy = "127.0.0.1,localhost,::1";
+      const mergedNoProxy = [
+        process.env.NO_PROXY || process.env.no_proxy || "",
+        loopbackNoProxy,
+      ]
+        .filter(Boolean)
+        .join(",");
+      envArgs.push(`NO_PROXY=${mergedNoProxy}`);
+      envArgs.push(`no_proxy=${mergedNoProxy}`);
       const nvapiKey = _nvidiaApiKey
         || process.env.NVIDIA_INFERENCE_API_KEY
         || process.env.NVIDIA_INTEGRATE_API_KEY

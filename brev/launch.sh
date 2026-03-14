@@ -32,6 +32,15 @@ CLI_RETRY_COUNT="${CLI_RETRY_COUNT:-5}"
 CLI_RETRY_DELAY_SECS="${CLI_RETRY_DELAY_SECS:-3}"
 GHCR_LOGIN="${GHCR_LOGIN:-auto}"
 GHCR_USER="${GHCR_USER:-}"
+DEFAULT_NEMOCLAW_IMAGE="ghcr.io/nvidia/openshell-community/sandboxes/nemoclaw:latest"
+if [[ -n "${NEMOCLAW_IMAGE+x}" ]]; then
+  NEMOCLAW_IMAGE_EXPLICIT=1
+else
+  NEMOCLAW_IMAGE_EXPLICIT=0
+fi
+NEMOCLAW_IMAGE="${NEMOCLAW_IMAGE:-$DEFAULT_NEMOCLAW_IMAGE}"
+SKIP_NEMOCLAW_IMAGE_BUILD="${SKIP_NEMOCLAW_IMAGE_BUILD:-}"
+CLUSTER_CONTAINER_NAME="${CLUSTER_CONTAINER_NAME:-openshell-cluster-openshell}"
 
 mkdir -p "$(dirname "$LAUNCH_LOG")"
 touch "$LAUNCH_LOG"
@@ -250,6 +259,136 @@ docker_login_ghcr_if_needed() {
   if [[ "$login_failed" -ne 0 ]]; then
     log "One or more GHCR logins failed. Continuing, but private image pulls may fail."
   fi
+}
+
+should_build_nemoclaw_image() {
+  if [[ "$SKIP_NEMOCLAW_IMAGE_BUILD" == "1" || "$SKIP_NEMOCLAW_IMAGE_BUILD" == "true" || "$SKIP_NEMOCLAW_IMAGE_BUILD" == "yes" ]]; then
+    return 1
+  fi
+  [[ -n "$COMMUNITY_REF" && "$COMMUNITY_REF" != "main" ]]
+}
+
+maybe_use_branch_local_nemoclaw_tag() {
+  if ! should_build_nemoclaw_image; then
+    return
+  fi
+
+  if [[ "$NEMOCLAW_IMAGE_EXPLICIT" == "1" || "$NEMOCLAW_IMAGE" != "$DEFAULT_NEMOCLAW_IMAGE" ]]; then
+    return
+  fi
+
+  NEMOCLAW_IMAGE="ghcr.io/nvidia/openshell-community/sandboxes/nemoclaw:local-dev"
+  log "Using non-main branch NeMoClaw image tag: $NEMOCLAW_IMAGE"
+}
+
+build_nemoclaw_image_if_needed() {
+  local docker_cmd=()
+  local image_context="$REPO_ROOT/sandboxes/nemoclaw"
+  local dockerfile_path="$image_context/Dockerfile"
+
+  if ! should_build_nemoclaw_image; then
+    if [[ "$SKIP_NEMOCLAW_IMAGE_BUILD" == "1" || "$SKIP_NEMOCLAW_IMAGE_BUILD" == "true" || "$SKIP_NEMOCLAW_IMAGE_BUILD" == "yes" ]]; then
+      log "Skipping local NeMoClaw image build by override (SKIP_NEMOCLAW_IMAGE_BUILD=${SKIP_NEMOCLAW_IMAGE_BUILD})."
+    else
+      log "Skipping local NeMoClaw image build (COMMUNITY_REF=${COMMUNITY_REF:-<unset>})."
+    fi
+    return
+  fi
+
+  if [[ ! -f "$dockerfile_path" ]]; then
+    log "NeMoClaw Dockerfile not found: $dockerfile_path"
+    exit 1
+  fi
+
+  if command -v docker >/dev/null 2>&1; then
+    docker_cmd=(docker)
+  elif command -v sudo >/dev/null 2>&1; then
+    docker_cmd=(sudo docker)
+  else
+    log "Docker is required to build the NeMoClaw sandbox image."
+    exit 1
+  fi
+
+  log "Building local NeMoClaw image for non-main ref '$COMMUNITY_REF': $NEMOCLAW_IMAGE"
+  if ! "${docker_cmd[@]}" build \
+    --pull \
+    --tag "$NEMOCLAW_IMAGE" \
+    --file "$dockerfile_path" \
+    "$image_context"; then
+    log "Local NeMoClaw image build failed."
+    exit 1
+  fi
+
+  log "Local NeMoClaw image ready: $NEMOCLAW_IMAGE"
+}
+
+resolve_docker_cmd() {
+  if command -v docker >/dev/null 2>&1; then
+    printf 'docker'
+    return 0
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    printf 'sudo docker'
+    return 0
+  fi
+  return 1
+}
+
+resolve_cluster_container_name() {
+  local docker_bin
+
+  if [[ -n "$CLUSTER_CONTAINER_NAME" ]]; then
+    printf '%s' "$CLUSTER_CONTAINER_NAME"
+    return 0
+  fi
+
+  docker_bin="$(resolve_docker_cmd)" || return 1
+
+  CLUSTER_CONTAINER_NAME="$($docker_bin ps --format '{{.Names}}\t{{.Image}}' | awk '$1 ~ /^openshell-cluster-/ { print $1; exit }')"
+  if [[ -z "$CLUSTER_CONTAINER_NAME" ]]; then
+    CLUSTER_CONTAINER_NAME="$($docker_bin ps --format '{{.Names}}\t{{.Image}}' | awk '$2 ~ /ghcr.io\\/nvidia\\/openshell\\/cluster/ { print $1; exit }')"
+  fi
+
+  [[ -n "$CLUSTER_CONTAINER_NAME" ]]
+}
+
+import_nemoclaw_image_into_cluster_if_needed() {
+  local docker_bin cluster_name
+
+  if ! should_build_nemoclaw_image && [[ "$NEMOCLAW_IMAGE_EXPLICIT" != "1" ]]; then
+    log "Skipping cluster image import; using registry-backed image: $NEMOCLAW_IMAGE"
+    return
+  fi
+
+  docker_bin="$(resolve_docker_cmd)" || {
+    log "Docker not available; skipping cluster image import."
+    return
+  }
+
+  if ! $docker_bin image inspect "$NEMOCLAW_IMAGE" >/dev/null 2>&1; then
+    log "Local NeMoClaw image not present on host; skipping cluster image import: $NEMOCLAW_IMAGE"
+    return
+  fi
+
+  if ! cluster_name="$(resolve_cluster_container_name)"; then
+    log "OpenShell cluster container not found; skipping cluster image import."
+    return
+  fi
+
+  log "Importing NeMoClaw image into cluster containerd: $NEMOCLAW_IMAGE -> $cluster_name"
+  if ! $docker_bin save "$NEMOCLAW_IMAGE" | $docker_bin exec -i "$cluster_name" sh -lc 'ctr -n k8s.io images import -'; then
+    log "Failed to import NeMoClaw image into cluster containerd."
+    exit 1
+  fi
+
+  if ! $docker_bin exec -i "$cluster_name" sh -lc "ctr -n k8s.io images ls | awk '{print \$1}' | grep -Fx '$NEMOCLAW_IMAGE' >/dev/null"; then
+    log "Imported image tag not found in cluster containerd: $NEMOCLAW_IMAGE"
+    log "Cluster image list:"
+    $docker_bin exec -i "$cluster_name" sh -lc "ctr -n k8s.io images ls | grep 'sandboxes/nemoclaw' || true"
+    exit 1
+  fi
+
+  log "Cluster image import complete: $NEMOCLAW_IMAGE"
 }
 
 checkout_repo_ref() {
@@ -518,7 +657,12 @@ start_welcome_ui() {
   log "Starting welcome UI in background..."
   log "Welcome UI log: $WELCOME_UI_LOG"
 
-  nohup env PORT="$PORT" REPO_ROOT="$REPO_ROOT" CLI_BIN="$CLI_BIN" node server.js >> "$WELCOME_UI_LOG" 2>&1 &
+  nohup env \
+    PORT="$PORT" \
+    REPO_ROOT="$REPO_ROOT" \
+    CLI_BIN="$CLI_BIN" \
+    NEMOCLAW_IMAGE="$NEMOCLAW_IMAGE" \
+    node server.js >> "$WELCOME_UI_LOG" 2>&1 &
   WELCOME_UI_PID=$!
   export WELCOME_UI_PID
   log "Welcome UI PID: $WELCOME_UI_PID"
@@ -542,8 +686,11 @@ main() {
   step "Resolving CLI"
   resolve_cli
   ensure_cli_compat_aliases
+  maybe_use_branch_local_nemoclaw_tag
   step "Authenticating registries"
   docker_login_ghcr_if_needed
+  step "Preparing NeMoClaw image"
+  build_nemoclaw_image_if_needed
   step "Ensuring Node.js"
   ensure_node
 
@@ -555,6 +702,8 @@ main() {
 
   step "Starting gateway"
   start_gateway
+  step "Importing NeMoClaw image into cluster"
+  import_nemoclaw_image_into_cluster_if_needed
 
   step "Configuring providers"
   run_provider_create_or_replace \

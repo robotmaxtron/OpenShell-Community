@@ -38,6 +38,7 @@ const SANDBOX_START_CMD = process.env.SANDBOX_START_CMD || "nemoclaw-start";
 const SANDBOX_BASE_IMAGE =
   process.env.SANDBOX_BASE_IMAGE ||
   "ghcr.io/nvidia/openshell-community/sandboxes/openclaw:latest";
+const NEMOCLAW_IMAGE = (process.env.NEMOCLAW_IMAGE || "").trim();
 const POLICY_FILE = path.join(SANDBOX_DIR, "policy.yaml");
 
 const LOG_FILE = "/tmp/nemoclaw-sandbox-create.log";
@@ -264,6 +265,12 @@ const injectKeyState = {
   keyHash: null,
 };
 
+// Raw API key stored in memory so it can be passed to the sandbox at
+// creation time. Not persisted to disk.
+let _nvidiaApiKey = process.env.NVIDIA_INFERENCE_API_KEY
+  || process.env.NVIDIA_INTEGRATE_API_KEY
+  || "";
+
 // ── Brev ID detection & URL building ───────────────────────────────────────
 
 function extractBrevId(host) {
@@ -286,7 +293,7 @@ function buildOpenclawUrl(token) {
   } else {
     url = `http://127.0.0.1:${PORT}/`;
   }
-  if (token) url += `?token=${token}`;
+  if (token) url += `#token=${token}`;
   return url;
 }
 
@@ -627,18 +634,44 @@ function runSandboxCreate() {
       const cmd = [
         CLI_BIN, "sandbox", "create",
         "--name", SANDBOX_NAME,
-        "--from", SANDBOX_DIR,
+        "--from", NEMOCLAW_IMAGE || SANDBOX_DIR,
         "--forward", "18789",
       ];
       if (policyPath) cmd.push("--policy", policyPath);
-      cmd.push(
-        "--",
-        "env",
-        `CHAT_UI_URL=${chatUiUrl}`,
-        SANDBOX_START_CMD
-      );
+      const envArgs = [`CHAT_UI_URL=${chatUiUrl}`];
+      const loopbackNoProxy = [
+        "127.0.0.1",
+        "localhost",
+        "::1",
+        "navigator.navigator.svc.cluster.local",
+        ".svc",
+        ".svc.cluster.local",
+        "10.42.0.0/16",
+        "10.43.0.0/16",
+      ].join(",");
+      const mergedNoProxy = [
+        process.env.NO_PROXY || process.env.no_proxy || "",
+        loopbackNoProxy,
+      ]
+        .filter(Boolean)
+        .join(",");
+      envArgs.push(`NO_PROXY=${mergedNoProxy}`);
+      envArgs.push(`no_proxy=${mergedNoProxy}`);
+      const nvapiKey = _nvidiaApiKey
+        || process.env.NVIDIA_INFERENCE_API_KEY
+        || process.env.NVIDIA_INTEGRATE_API_KEY
+        || "";
+      if (nvapiKey) {
+        envArgs.push(`NVIDIA_INFERENCE_API_KEY=${nvapiKey}`);
+        envArgs.push(`NVIDIA_INTEGRATE_API_KEY=${nvapiKey}`);
+      }
+
+      cmd.push("--", "env", ...envArgs, SANDBOX_START_CMD);
 
       const cmdDisplay = cmd.slice(0, 8).join(" ") + " -- ...";
+      if (NEMOCLAW_IMAGE) {
+        logWelcome(`Using NeMoClaw image override: ${NEMOCLAW_IMAGE}`);
+      }
       logWelcome(`Running: ${cmdDisplay}`);
 
       const logFd = fs.openSync(LOG_FILE, "w");
@@ -1077,6 +1110,9 @@ async function handleClusterInferenceSet(req, res) {
 // ── Reverse proxy (HTTP) ───────────────────────────────────────────────────
 
 function proxyToSandbox(clientReq, clientRes) {
+  logWelcome(
+    `proxy http in ${clientReq.method || "GET"} ${clientReq.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`
+  );
   const headers = {};
   for (const [key, val] of Object.entries(clientReq.headers)) {
     if (key.toLowerCase() === "host") continue;
@@ -1094,6 +1130,9 @@ function proxyToSandbox(clientReq, clientRes) {
   };
 
   const upstream = http.request(opts, (upstreamRes) => {
+    logWelcome(
+      `proxy http out ${clientReq.method || "GET"} ${clientReq.url || "/"} status=${upstreamRes.statusCode || 0}`
+    );
     // Filter hop-by-hop + content-length (we'll set our own)
     const outHeaders = {};
     for (const [key, val] of Object.entries(upstreamRes.headers)) {
@@ -1132,6 +1171,7 @@ function proxyToSandbox(clientReq, clientRes) {
 // ── Reverse proxy (WebSocket) ──────────────────────────────────────────────
 
 function proxyWebSocket(req, clientSocket, head) {
+  logWelcome(`proxy ws in ${req.method || "GET"} ${req.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`);
   const upstream = net.createConnection(
     { host: "127.0.0.1", port: SANDBOX_PORT },
     () => {
@@ -1271,8 +1311,10 @@ async function handleInjectKey(req, res) {
   injectKeyState.status = "injecting";
   injectKeyState.error = null;
   injectKeyState.keyHash = keyH;
+  _nvidiaApiKey = key;
 
   runInjectKey(key, keyH);
+
   return jsonResponse(res, 202, { ok: true, started: true });
 }
 
@@ -1561,6 +1603,7 @@ function _resetForTesting() {
   detectedBrevId = "";
   _brevEnvId = "";
   renderedIndex = null;
+  _nvidiaApiKey = "";
 }
 
 function _setMocksForTesting(mocks) {

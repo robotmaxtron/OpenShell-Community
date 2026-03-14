@@ -30,7 +30,14 @@ This repo is the community ecosystem around OpenShell -- a hub for contributed s
 
 ### Quick Start with Brev
 
-TODO: Add Brev instructions
+Skip the setup and launch OpenShell Community on a fully configured Brev instance, whether you want to use Brev as a remote OpenShell gateway with or without GPU accelerators, or as an all-in-one playground for sandboxes, inference, and UI workflows.
+
+| Instance | Best For | Deploy |
+| -------- | -------- | ------ |
+| CPU-only | Remote OpenShell gateway deployments, external inference endpoints, remote APIs, and lighter-weight sandbox workflows | <a href="https://brev.nvidia.com/"><img src="https://brev-assets.s3.us-west-1.amazonaws.com/nv-lb-dark.svg" alt="Deploy on Brev" height="40"/></a> |
+| NVIDIA H100 | All-in-one OpenShell playgrounds, locally hosted LLM endpoints, GPU-heavy sandboxes, and higher-throughput agent workloads | <a href="https://brev.nvidia.com/"><img src="https://brev-assets.s3.us-west-1.amazonaws.com/nv-lb-dark.svg" alt="Deploy on Brev" height="40"/></a> |
+
+After the Brev instance is ready, access the Welcome UI to inject provider keys and access your Openclaw sandbox.
 
 ### Using Sandboxes
 

@@ -21,7 +21,8 @@ import { syncKeysToProviders } from "./api-keys-page.ts";
 const INITIAL_CONNECT_TIMEOUT_MS = 30_000;
 const EXTENDED_CONNECT_TIMEOUT_MS = 300_000;
 const POST_PAIRING_SETTLE_DELAY_MS = 15_000;
-const STABLE_CONNECTION_WINDOW_MS = 3_000;
+const STABLE_CONNECTION_WINDOW_MS = 10_000;
+const STABLE_CONNECTION_TIMEOUT_MS = 45_000;
 const PAIRING_RELOAD_FLAG = "nemoclaw:pairing-bootstrap-reloaded";
 
 function inject(): boolean {
@@ -108,7 +109,7 @@ function bootstrap() {
     try {
       await waitForStableConnection(
         STABLE_CONNECTION_WINDOW_MS,
-        POST_PAIRING_SETTLE_DELAY_MS,
+        STABLE_CONNECTION_TIMEOUT_MS,
       );
     } catch {
       await new Promise((resolve) => setTimeout(resolve, POST_PAIRING_SETTLE_DELAY_MS));
@@ -118,6 +119,15 @@ function bootstrap() {
       setConnectOverlayText("Device pairing approved. Reloading dashboard...");
       window.location.reload();
       return;
+    }
+    setConnectOverlayText("Device pairing approved. Verifying dashboard health...");
+    try {
+      await waitForStableConnection(
+        STABLE_CONNECTION_WINDOW_MS,
+        STABLE_CONNECTION_TIMEOUT_MS,
+      );
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, POST_PAIRING_SETTLE_DELAY_MS));
     }
     clearPairingReloadFlag();
     revealApp();

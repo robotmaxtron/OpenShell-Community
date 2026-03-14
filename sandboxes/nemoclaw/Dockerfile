@@ -20,9 +20,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends jq && \
     rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends jq && \
-    rm -rf /var/lib/apt/lists/*
+# Bake the NeMoClaw default policy into the same location used by the
+# OpenClaw base image so direct image launches and create-time --policy
+# launches start from the same policy.
+RUN mkdir -p /etc/navigator
+COPY policy.yaml /etc/navigator/policy.yaml
 
 # Override the startup script with our version (adds runtime API key injection)
 COPY nemoclaw-start.sh /usr/local/bin/nemoclaw-start

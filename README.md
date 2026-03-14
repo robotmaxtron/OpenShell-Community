@@ -30,7 +30,24 @@ This repo is the community ecosystem around OpenShell -- a hub for contributed s
 
 ### Quick Start with Brev
 
-TODO: Add Brev instructions
+#### Deploy Instantly with NVIDIA Brev
+
+Skip the setup and launch OpenShell Community on a fully configured Brev instance.
+
+| Instance | Best For | Deploy |
+| -------- | -------- | ------ |
+| CPU-only | External inference endpoints, remote APIs, lighter-weight sandbox workflows | <a href="https://brev.nvidia.com/"><img src="https://brev-assets.s3.us-west-1.amazonaws.com/nv-lb-dark.svg" alt="Deploy on Brev" height="40"/></a> |
+| NVIDIA H100 | Locally hosted LLM endpoints, GPU-heavy sandboxes, higher-throughput agent workloads | <a href="https://brev.nvidia.com/"><img src="https://brev-assets.s3.us-west-1.amazonaws.com/nv-lb-dark.svg" alt="Deploy on Brev" height="40"/></a> |
+
+After the Brev instance is ready, bootstrap the Welcome UI:
+
+```bash
+git clone https://github.com/NVIDIA/OpenShell-Community.git
+cd OpenShell-Community
+bash brev/launch.sh
+```
+
+The launcher brings up the Welcome UI on `http://localhost:8081`, where you can inject provider keys and create the NeMoClaw sandbox flow.
 
 ### Using Sandboxes
 

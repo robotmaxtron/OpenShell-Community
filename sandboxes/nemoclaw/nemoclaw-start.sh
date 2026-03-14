@@ -134,6 +134,7 @@ if [ ! -f "$_POLICY_DST" ] && [ -f "$_POLICY_SRC" ]; then
 fi
 _POLICY_PATH="${_POLICY_DST}"
 [ -f "$_POLICY_PATH" ] || _POLICY_PATH="$_POLICY_SRC"
+echo "[gateway] policy path selected: ${_POLICY_PATH} (src=${_POLICY_SRC} dst=${_POLICY_DST})"
 
 # Start the policy reverse proxy on the public-facing port.  It forwards all
 # traffic to the OpenClaw gateway on the internal port and intercepts

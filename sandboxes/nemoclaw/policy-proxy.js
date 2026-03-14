@@ -14,6 +14,7 @@ const http = require("http");
 const fs = require("fs");
 const os = require("os");
 const net = require("net");
+const crypto = require("crypto");
 
 const POLICY_PATH = process.env.POLICY_PATH || "/etc/openshell/policy.yaml";
 const UPSTREAM_PORT = parseInt(process.env.UPSTREAM_PORT || "18788", 10);
@@ -312,6 +313,145 @@ function pushPolicyToGateway(yamlBody) {
   });
 }
 
+function sha256Hex(text) {
+  return crypto.createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function hasCriticalNavigatorRule(parsed) {
+  const rule = parsed
+    && parsed.network_policies
+    && parsed.network_policies.allow_navigator_navigator_svc_cluster_local_8080;
+  if (!rule || !Array.isArray(rule.endpoints) || !Array.isArray(rule.binaries)) {
+    return false;
+  }
+  const hasEndpoint = rule.endpoints.some(
+    (ep) => ep && ep.host === "navigator.navigator.svc.cluster.local" && Number(ep.port) === 8080
+  );
+  const hasBinary = rule.binaries.some((bin) => bin && bin.path === "/usr/bin/node");
+  return hasEndpoint && hasBinary;
+}
+
+function policyStatusName(status) {
+  switch (status) {
+    case 1: return "PENDING";
+    case 2: return "LOADED";
+    case 3: return "FAILED";
+    case 4: return "SUPERSEDED";
+    default: return "UNSPECIFIED";
+  }
+}
+
+function auditStartupPolicyFile() {
+  let yaml;
+  try {
+    yaml = require("js-yaml");
+  } catch (e) {
+    console.warn(`[policy-proxy] startup audit skipped: js-yaml unavailable (${e.message})`);
+    return;
+  }
+
+  let raw;
+  try {
+    raw = fs.readFileSync(POLICY_PATH, "utf8");
+  } catch (e) {
+    console.error(`[policy-proxy] startup audit failed: could not read ${POLICY_PATH}: ${e.message}`);
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = yaml.load(raw);
+  } catch (e) {
+    console.error(`[policy-proxy] startup audit failed: YAML parse error in ${POLICY_PATH}: ${e.message}`);
+    return;
+  }
+
+  const criticalRulePresent = hasCriticalNavigatorRule(parsed);
+  console.log(
+    `[policy-proxy] startup policy audit path=${POLICY_PATH} ` +
+    `sha256=${sha256Hex(raw)} version=${parsed && parsed.version ? parsed.version : 0} ` +
+    `critical_rule.allow_navigator_navigator_svc_cluster_local_8080=${criticalRulePresent}`
+  );
+}
+
+function listSandboxPolicies(request) {
+  return new Promise((resolve, reject) => {
+    grpcClient.ListSandboxPolicies(request, (err, response) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+function getSandboxPolicyStatus(request) {
+  return new Promise((resolve, reject) => {
+    grpcClient.GetSandboxPolicyStatus(request, (err, response) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+async function auditNavigatorPolicyState() {
+  if (!grpcEnabled || !grpcClient || grpcPermanentlyDisabled) {
+    console.log(
+      `[policy-proxy] startup navigator audit skipped: ` +
+      `grpcEnabled=${grpcEnabled} grpcClient=${!!grpcClient} disabled=${grpcPermanentlyDisabled}`
+    );
+    return;
+  }
+
+  try {
+    const listed = await listSandboxPolicies({ name: sandboxName, limit: 1, offset: 0 });
+    const revision = listed && Array.isArray(listed.revisions) ? listed.revisions[0] : null;
+    if (!revision) {
+      console.log(`[policy-proxy] startup navigator audit: no policy revisions found for sandbox=${sandboxName}`);
+      return;
+    }
+
+    const statusResp = await getSandboxPolicyStatus({ name: sandboxName, version: revision.version || 0 });
+    console.log(
+      `[policy-proxy] startup navigator audit sandbox=${sandboxName} ` +
+      `latest_version=${revision.version || 0} latest_hash=${revision.policy_hash || ""} ` +
+      `latest_status=${policyStatusName(revision.status)} active_version=${statusResp.active_version || 0}`
+    );
+  } catch (e) {
+    console.warn(`[policy-proxy] startup navigator audit failed: ${e.message}`);
+  }
+}
+
+function scheduleStartupAudit(attempt = 1) {
+  const maxAttempts = 5;
+  const delayMs = 1500;
+
+  setTimeout(async () => {
+    if (grpcEnabled && grpcClient && !grpcPermanentlyDisabled) {
+      await auditNavigatorPolicyState();
+      return;
+    }
+
+    if (attempt >= maxAttempts) {
+      console.log(
+        `[policy-proxy] startup navigator audit gave up after ${attempt} attempts ` +
+        `(grpcEnabled=${grpcEnabled} grpcClient=${!!grpcClient} disabled=${grpcPermanentlyDisabled})`
+      );
+      return;
+    }
+
+    console.log(
+      `[policy-proxy] startup navigator audit retry ${attempt}/${maxAttempts} ` +
+      `(grpcEnabled=${grpcEnabled} grpcClient=${!!grpcClient} disabled=${grpcPermanentlyDisabled})`
+    );
+    scheduleStartupAudit(attempt + 1);
+  }, delayMs);
+}
+
 // ---------------------------------------------------------------------------
 // HTTP proxy helpers
 // ---------------------------------------------------------------------------
@@ -484,7 +624,9 @@ server.on("upgrade", (req, socket, head) => {
 
 // Initialize gRPC client before starting the HTTP server.
 initGrpcClient();
+auditStartupPolicyFile();
 
 server.listen(LISTEN_PORT, "127.0.0.1", () => {
   console.log(`[policy-proxy] Listening on 127.0.0.1:${LISTEN_PORT}, upstream 127.0.0.1:${UPSTREAM_PORT}`);
+  scheduleStartupAudit();
 });

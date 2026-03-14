@@ -37,8 +37,6 @@ let selectedModelId = DEFAULT_MODEL.id;
 let modelSelectorObserver: MutationObserver | null = null;
 let applyInFlight = false;
 let currentWrapper: HTMLElement | null = null;
-let activeClusterRoute: ClusterRoute | null = null;
-let activeRoutePrimedThisPage = false;
 
 // ---------------------------------------------------------------------------
 // Build the config.patch payload for a given model entry
@@ -116,7 +114,6 @@ async function fetchDynamic(): Promise<void> {
         route = { providerName: body.providerName, modelId: body.modelId || "", version: body.version || 0 };
       }
     }
-    activeClusterRoute = route;
 
     const entries: ModelEntry[] = [];
 
@@ -144,47 +141,6 @@ async function fetchDynamic(): Promise<void> {
   } catch {
     // Non-fatal -- static models still work
   }
-}
-
-function hasPrimedActiveRoute(route: ClusterRoute): boolean {
-  return activeRoutePrimedThisPage;
-}
-
-function markActiveRoutePrimed(route: ClusterRoute): void {
-  void route;
-  activeRoutePrimedThisPage = true;
-}
-
-async function primeActiveRoute(): Promise<void> {
-  const route = activeClusterRoute;
-  if (!route?.providerName || !route.modelId) {
-    console.info("[NeMoClaw] active route prime: skipped (no active route)");
-    return;
-  }
-  if (hasPrimedActiveRoute(route)) {
-    console.info(`[NeMoClaw] active route prime: skipped (already primed ${route.providerName}/${route.modelId})`);
-    return;
-  }
-
-  console.info(`[NeMoClaw] active route prime: start ${route.providerName}/${route.modelId}`);
-
-  const res = await fetch("/api/cluster-inference", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ providerName: route.providerName, modelId: route.modelId }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error || `HTTP ${res.status}`);
-  }
-
-  markActiveRoutePrimed(route);
-  console.info(`[NeMoClaw] active route prime: success ${route.providerName}/${route.modelId}`);
-}
-
-export async function bootstrapActiveRoutePrime(): Promise<void> {
-  await fetchDynamic();
-  await primeActiveRoute();
 }
 
 // ---------------------------------------------------------------------------

@@ -283,6 +283,8 @@ const sandboxState = {
   pid: null,
   url: null,
   error: null,
+  routeActivationAttempted: false,
+  routeActivationInFlight: false,
 };
 
 const injectKeyState = {
@@ -416,6 +418,7 @@ async function sandboxReady() {
       const url = buildOpenclawUrl(token);
       sandboxState.status = "running";
       sandboxState.url = url;
+      await activateCurrentInferenceRouteOnce("sandbox-ready");
       return true;
     }
   }
@@ -702,6 +705,8 @@ function runSandboxCreate() {
   sandboxState.status = "creating";
   sandboxState.error = null;
   sandboxState.url = null;
+  sandboxState.routeActivationAttempted = false;
+  sandboxState.routeActivationInFlight = false;
 
   (async () => {
     try {
@@ -835,6 +840,7 @@ function runSandboxCreate() {
             const url = buildOpenclawUrl(token);
             sandboxState.status = "running";
             sandboxState.url = url;
+            await activateCurrentInferenceRouteOnce("sandbox-create");
             return;
           }
           await sleep(3000);
@@ -1220,6 +1226,58 @@ async function handleClusterInferenceSet(req, res) {
   }
 }
 
+async function activateCurrentInferenceRouteOnce(reason = "sandbox-ready") {
+  if (sandboxState.routeActivationAttempted || sandboxState.routeActivationInFlight) return;
+
+  sandboxState.routeActivationInFlight = true;
+  try {
+    const current = await execFirstSuccess(
+      [
+        cliArgs("inference", "get"),
+        cliArgs("cluster", "inference", "get"),
+      ],
+      30000
+    );
+    if (current.code !== 0) {
+      const err = (current.stderr || current.stdout || "get failed").trim();
+      logWelcome(`[inference-route] skipped (${reason}): could not read current route: ${err}`);
+      return;
+    }
+
+    const parsed = parseClusterInference(current.stdout);
+    if (!parsed?.providerName || !parsed.modelId) {
+      logWelcome(`[inference-route] skipped (${reason}): no active route configured`);
+      return;
+    }
+
+    logWelcome(
+      `[inference-route] activating once (${reason}): ${parsed.providerName}/${parsed.modelId}`
+    );
+    const applied = await execFirstSuccess(
+      [
+        cliArgs("inference", "set", "--provider", parsed.providerName, "--model", parsed.modelId),
+        cliArgs("cluster", "inference", "set", "--provider", parsed.providerName, "--model", parsed.modelId),
+      ],
+      30000
+    );
+    if (applied.code !== 0) {
+      const err = (applied.stderr || applied.stdout || "set failed").trim();
+      logWelcome(`[inference-route] activation failed (${reason}): ${err}`);
+      return;
+    }
+
+    const result = parseClusterInference(applied.stdout) || parsed;
+    logWelcome(
+      `[inference-route] activation complete (${reason}): ${result.providerName}/${result.modelId}`
+    );
+  } catch (e) {
+    logWelcome(`[inference-route] activation error (${reason}): ${String(e)}`);
+  } finally {
+    sandboxState.routeActivationAttempted = true;
+    sandboxState.routeActivationInFlight = false;
+  }
+}
+
 // ── Reverse proxy (HTTP) ───────────────────────────────────────────────────
 
 function proxyToSandbox(clientReq, clientRes) {
@@ -1334,6 +1392,7 @@ async function handleSandboxStatus(req, res) {
     const url = buildOpenclawUrl(token, req);
     sandboxState.status = "running";
     sandboxState.url = url;
+    await activateCurrentInferenceRouteOnce("sandbox-status");
     state.status = "running";
     state.url = url;
   }
@@ -1712,6 +1771,8 @@ function _resetForTesting() {
   sandboxState.pid = null;
   sandboxState.url = null;
   sandboxState.error = null;
+  sandboxState.routeActivationAttempted = false;
+  sandboxState.routeActivationInFlight = false;
   injectKeyState.status = "idle";
   injectKeyState.error = null;
   injectKeyState.keyHash = null;

@@ -13,7 +13,7 @@
 import "./styles.css";
 import { injectButton } from "./deploy-modal.ts";
 import { injectNavGroup, activateNemoPage, watchOpenClawNavClicks } from "./nav-group.ts";
-import { bootstrapActiveRoutePrime, injectModelSelector, watchChatCompose } from "./model-selector.ts";
+import { injectModelSelector, watchChatCompose } from "./model-selector.ts";
 import { ingestKeysFromUrl, DEFAULT_MODEL, resolveApiKey, isKeyConfigured } from "./model-registry.ts";
 import { hasBlockingGatewayMessage, waitForStableConnection } from "./gateway-bridge.ts";
 import { syncKeysToProviders } from "./api-keys-page.ts";
@@ -101,10 +101,6 @@ function revealApp(): void {
     overlay.addEventListener("transitionend", () => overlay.remove(), { once: true });
     setTimeout(() => overlay.remove(), 600);
   }
-
-  bootstrapActiveRoutePrime().catch((e) =>
-    console.warn("[NeMoClaw] bootstrap active route prime failed:", e),
-  );
 }
 
 function shouldAllowRecoveryReload(): boolean {

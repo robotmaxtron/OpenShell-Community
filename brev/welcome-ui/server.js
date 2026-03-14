@@ -327,11 +327,15 @@ function normalizeBaseUrl(baseUrl) {
   }
 }
 
+function isLocalBrowserHost(host) {
+  return /^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?$/i.test(String(host || "").trim());
+}
+
 function derivePublicBaseUrl(req) {
   const forwardedProto = firstForwardedValue(req?.headers?.["x-forwarded-proto"]);
   const forwardedHost = firstForwardedValue(req?.headers?.["x-forwarded-host"]);
   const host = firstForwardedValue(req?.headers?.host);
-  const proto = forwardedProto || (host && !/^127\.0\.0\.1(?::\d+)?$/.test(host) ? "https" : "http");
+  const proto = forwardedProto || (host && !isLocalBrowserHost(host) ? "https" : "http");
   const authority = forwardedHost || host;
   if (!authority) return "";
   return normalizeBaseUrl(`${proto}://${authority}/`);
@@ -340,7 +344,24 @@ function derivePublicBaseUrl(req) {
 function rememberPublicBaseUrl(req) {
   const resolved = derivePublicBaseUrl(req);
   if (resolved) {
-    detectedPublicBaseUrl = resolved;
+    const resolvedHost = (() => {
+      try {
+        return new URL(resolved).host;
+      } catch {
+        return "";
+      }
+    })();
+    const hasDetectedPublicHost = (() => {
+      try {
+        return Boolean(detectedPublicBaseUrl) && !isLocalBrowserHost(new URL(detectedPublicBaseUrl).host);
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!isLocalBrowserHost(resolvedHost) || !hasDetectedPublicHost) {
+      detectedPublicBaseUrl = resolved;
+    }
   }
   return detectedPublicBaseUrl;
 }

@@ -67,6 +67,24 @@ function formatRequestLine(req) {
   return `${req.method || "GET"} ${req.url || "/"} host=${host}`;
 }
 
+function isNoisyProxyPath(method, requestPath) {
+  if (!requestPath) return false;
+  if (requestPath === "/api/pairing-bootstrap") return true;
+  if (requestPath === "/favicon.ico" || requestPath === "/favicon.svg") return true;
+  if (requestPath.endsWith(".map")) return true;
+  if ((method || "GET") === "GET" && requestPath.startsWith("/assets/")) return true;
+  return false;
+}
+
+function shouldLogProxyRequest(method, requestPath) {
+  return !isNoisyProxyPath(method, requestPath);
+}
+
+function shouldLogProxyResponse(method, requestPath, statusCode) {
+  if ((statusCode || 0) >= 400) return true;
+  return !isNoisyProxyPath(method, requestPath);
+}
+
 function updatePairingState(patch) {
   Object.assign(pairingBootstrap, patch, { updatedAt: Date.now() });
 }
@@ -715,7 +733,9 @@ function scheduleStartupAudit(attempt = 1) {
 // ---------------------------------------------------------------------------
 
 function proxyRequest(clientReq, clientRes) {
-  console.log(`[policy-proxy] http in  ${formatRequestLine(clientReq)} -> ${UPSTREAM_HOST}:${UPSTREAM_PORT}`);
+  if (shouldLogProxyRequest(clientReq.method, clientReq.url || "/")) {
+    console.log(`[policy-proxy] http in  ${formatRequestLine(clientReq)} -> ${UPSTREAM_HOST}:${UPSTREAM_PORT}`);
+  }
   const opts = {
     hostname: UPSTREAM_HOST,
     port: UPSTREAM_PORT,
@@ -725,10 +745,12 @@ function proxyRequest(clientReq, clientRes) {
   };
 
   const upstream = http.request(opts, (upstreamRes) => {
-    console.log(
-      `[policy-proxy] http out ${clientReq.method || "GET"} ${clientReq.url || "/"} ` +
-      `status=${upstreamRes.statusCode || 0}`
-    );
+    if (shouldLogProxyResponse(clientReq.method, clientReq.url || "/", upstreamRes.statusCode || 0)) {
+      console.log(
+        `[policy-proxy] http out ${clientReq.method || "GET"} ${clientReq.url || "/"} ` +
+        `status=${upstreamRes.statusCode || 0}`
+      );
+    }
     clientRes.writeHead(upstreamRes.statusCode, upstreamRes.headers);
     upstreamRes.pipe(clientRes, { end: true });
   });
@@ -909,7 +931,9 @@ const server = http.createServer((req, res) => {
 // WebSocket upgrade — pipe raw TCP to upstream
 server.on("upgrade", (req, socket, head) => {
   startPairingBootstrap(`ws:${req.url || "/"}`);
-  console.log(`[policy-proxy] ws in    ${formatRequestLine(req)} -> ${UPSTREAM_HOST}:${UPSTREAM_PORT}`);
+  if (shouldLogProxyRequest(req.method, req.url || "/")) {
+    console.log(`[policy-proxy] ws in    ${formatRequestLine(req)} -> ${UPSTREAM_HOST}:${UPSTREAM_PORT}`);
+  }
   const upstream = net.createConnection({ host: UPSTREAM_HOST, port: UPSTREAM_PORT }, () => {
     const reqLine = `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`;
     let headers = "";

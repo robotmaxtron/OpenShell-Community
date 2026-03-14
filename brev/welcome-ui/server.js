@@ -111,6 +111,24 @@ function logWelcome(msg) {
   process.stderr.write(`[welcome-ui] ${msg}\n`);
 }
 
+function isNoisyProxyPath(method, requestPath) {
+  if (!requestPath) return false;
+  if (requestPath === "/api/pairing-bootstrap") return true;
+  if (requestPath === "/favicon.ico" || requestPath === "/favicon.svg") return true;
+  if (requestPath.endsWith(".map")) return true;
+  if ((method || "GET") === "GET" && requestPath.startsWith("/assets/")) return true;
+  return false;
+}
+
+function shouldLogProxyRequest(method, requestPath) {
+  return !isNoisyProxyPath(method, requestPath);
+}
+
+function shouldLogProxyResponse(method, requestPath, statusCode) {
+  if ((statusCode || 0) >= 400) return true;
+  return !isNoisyProxyPath(method, requestPath);
+}
+
 /**
  * Promise wrapper around child_process.execFile with timeout.
  * Returns { code, stdout, stderr }.
@@ -1184,9 +1202,11 @@ async function handleClusterInferenceSet(req, res) {
 // ── Reverse proxy (HTTP) ───────────────────────────────────────────────────
 
 function proxyToSandbox(clientReq, clientRes) {
-  logWelcome(
-    `proxy http in ${clientReq.method || "GET"} ${clientReq.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`
-  );
+  if (shouldLogProxyRequest(clientReq.method, clientReq.url || "/")) {
+    logWelcome(
+      `proxy http in ${clientReq.method || "GET"} ${clientReq.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`
+    );
+  }
   const headers = {};
   for (const [key, val] of Object.entries(clientReq.headers)) {
     if (key.toLowerCase() === "host") continue;
@@ -1204,9 +1224,11 @@ function proxyToSandbox(clientReq, clientRes) {
   };
 
   const upstream = http.request(opts, (upstreamRes) => {
-    logWelcome(
-      `proxy http out ${clientReq.method || "GET"} ${clientReq.url || "/"} status=${upstreamRes.statusCode || 0}`
-    );
+    if (shouldLogProxyResponse(clientReq.method, clientReq.url || "/", upstreamRes.statusCode || 0)) {
+      logWelcome(
+        `proxy http out ${clientReq.method || "GET"} ${clientReq.url || "/"} status=${upstreamRes.statusCode || 0}`
+      );
+    }
     // Filter hop-by-hop + content-length (we'll set our own)
     const outHeaders = {};
     for (const [key, val] of Object.entries(upstreamRes.headers)) {
@@ -1245,7 +1267,9 @@ function proxyToSandbox(clientReq, clientRes) {
 // ── Reverse proxy (WebSocket) ──────────────────────────────────────────────
 
 function proxyWebSocket(req, clientSocket, head) {
-  logWelcome(`proxy ws in ${req.method || "GET"} ${req.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`);
+  if (shouldLogProxyRequest(req.method, req.url || "/")) {
+    logWelcome(`proxy ws in ${req.method || "GET"} ${req.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`);
+  }
   const upstream = net.createConnection(
     { host: "127.0.0.1", port: SANDBOX_PORT },
     () => {

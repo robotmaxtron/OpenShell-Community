@@ -1209,10 +1209,8 @@ function proxyToSandbox(clientReq, clientRes) {
   }
   const headers = {};
   for (const [key, val] of Object.entries(clientReq.headers)) {
-    if (key.toLowerCase() === "host") continue;
     headers[key] = val;
   }
-  headers["host"] = `127.0.0.1:${SANDBOX_PORT}`;
 
   const opts = {
     hostname: "127.0.0.1",
@@ -1279,11 +1277,7 @@ function proxyWebSocket(req, clientSocket, head) {
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         const key = req.rawHeaders[i];
         const val = req.rawHeaders[i + 1];
-        if (key.toLowerCase() === "host") {
-          headers += `Host: 127.0.0.1:${SANDBOX_PORT}\r\n`;
-        } else {
-          headers += `${key}: ${val}\r\n`;
-        }
+        headers += `${key}: ${val}\r\n`;
       }
       upstream.write(reqLine + headers + "\r\n");
       if (head && head.length) upstream.write(head);

@@ -148,13 +148,12 @@ function getOverlayTextForPairingState(state: PairingBootstrapState | null): str
 function bootstrap() {
   console.info("[NeMoClaw] pairing bootstrap: start");
   showConnectOverlay();
-  void fetchPairingBootstrapState("POST");
 
   let pairingPollTimer = 0;
   let stopped = false;
   let dashboardStable = false;
   let latestPairingState: PairingBootstrapState | null = null;
-  let lastPairingStartAt = Date.now();
+  let lastPairingStartAt = 0;
 
   const stopPairingPoll = () => {
     stopped = true;
@@ -173,6 +172,7 @@ function bootstrap() {
       !dashboardStable &&
       state &&
       !state.active &&
+      !isPairingTerminal(state) &&
       Date.now() - lastPairingStartAt >= PAIRING_REARM_INTERVAL_MS
     ) {
       const rearmed = await fetchPairingBootstrapState("POST");
@@ -188,7 +188,24 @@ function bootstrap() {
     return state;
   };
 
-  void pollPairingState();
+  void (async () => {
+    const initialState = await fetchPairingBootstrapState("GET");
+    latestPairingState = initialState;
+    const initialText = getOverlayTextForPairingState(initialState);
+    if (initialText) setConnectOverlayText(initialText);
+
+    if (!initialState || (!initialState.active && !isPairingTerminal(initialState))) {
+      const started = await fetchPairingBootstrapState("POST");
+      if (started) {
+        latestPairingState = started;
+        lastPairingStartAt = Date.now();
+        const startedText = getOverlayTextForPairingState(started);
+        if (startedText) setConnectOverlayText(startedText);
+      }
+    }
+
+    await pollPairingState();
+  })();
 
   const waitForDashboardReadiness = async (timeoutMs: number, overlayText: string) => {
     setConnectOverlayText(overlayText);

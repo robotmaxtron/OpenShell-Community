@@ -271,6 +271,16 @@ async function runPairingBootstrapTick() {
     updatePairingState({ quietPolls });
 
     if (
+      pairingBootstrap.approvedCount === 0 &&
+      !hasPending &&
+      hasPaired &&
+      quietPolls >= AUTO_PAIR_QUIET_POLLS
+    ) {
+      finishPairingBootstrap("paired");
+      return;
+    }
+
+    if (
       pairingBootstrap.approvedCount > 0 &&
       pairingBootstrap.lastApprovalAt > 0 &&
       Date.now() - pairingBootstrap.lastApprovalAt >= AUTO_PAIR_APPROVAL_SETTLE_MS &&
@@ -293,8 +303,14 @@ async function runPairingBootstrapTick() {
   pairingBootstrap.timer = setTimeout(runPairingBootstrapTick, AUTO_PAIR_POLL_MS);
 }
 
-function startPairingBootstrap(reason) {
+function startPairingBootstrap(reason, force = false) {
   if (pairingBootstrap.active) {
+    return pairingSnapshot();
+  }
+  if (
+    !force &&
+    (pairingBootstrap.status === "approved" || pairingBootstrap.status === "paired")
+  ) {
     return pairingSnapshot();
   }
   updatePairingState({
@@ -866,7 +882,7 @@ function handlePairingBootstrap(req, res) {
   }
 
   if (req.method === "POST") {
-    const snapshot = startPairingBootstrap("api");
+    const snapshot = startPairingBootstrap("api", true);
     sendJson(res, 202, snapshot);
     return;
   }

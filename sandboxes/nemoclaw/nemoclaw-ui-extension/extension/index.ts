@@ -102,19 +102,14 @@ function clearPairingReloadFlag(): void {
 }
 
 function bootstrap() {
+  console.info("[NeMoClaw] pairing bootstrap: start");
   showConnectOverlay();
 
   const finalizeConnectedState = async () => {
     setConnectOverlayText("Device pairing approved. Finalizing dashboard...");
-    try {
-      await waitForStableConnection(
-        STABLE_CONNECTION_WINDOW_MS,
-        STABLE_CONNECTION_TIMEOUT_MS,
-      );
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, POST_PAIRING_SETTLE_DELAY_MS));
-    }
+    console.info("[NeMoClaw] pairing bootstrap: reconnect detected");
     if (shouldForcePairingReload()) {
+      console.info("[NeMoClaw] pairing bootstrap: forcing one-time reload");
       markPairingReloadComplete();
       setConnectOverlayText("Device pairing approved. Reloading dashboard...");
       window.location.reload();
@@ -122,13 +117,16 @@ function bootstrap() {
     }
     setConnectOverlayText("Device pairing approved. Verifying dashboard health...");
     try {
+      console.info("[NeMoClaw] pairing bootstrap: waiting for stable post-reload connection");
       await waitForStableConnection(
         STABLE_CONNECTION_WINDOW_MS,
         STABLE_CONNECTION_TIMEOUT_MS,
       );
     } catch {
+      console.warn("[NeMoClaw] pairing bootstrap: stable post-reload connection check timed out; delaying reveal");
       await new Promise((resolve) => setTimeout(resolve, POST_PAIRING_SETTLE_DELAY_MS));
     }
+    console.info("[NeMoClaw] pairing bootstrap: reveal app");
     clearPairingReloadFlag();
     revealApp();
   };
@@ -136,11 +134,13 @@ function bootstrap() {
   waitForReconnect(INITIAL_CONNECT_TIMEOUT_MS)
     .then(finalizeConnectedState)
     .catch(async () => {
+      console.warn("[NeMoClaw] pairing bootstrap: initial reconnect timed out; extending wait");
       setConnectOverlayText("Still waiting for device pairing approval...");
       try {
         await waitForReconnect(EXTENDED_CONNECT_TIMEOUT_MS);
         await finalizeConnectedState();
       } catch {
+        console.warn("[NeMoClaw] pairing bootstrap: extended reconnect timed out; revealing app anyway");
         clearPairingReloadFlag();
         revealApp();
       }

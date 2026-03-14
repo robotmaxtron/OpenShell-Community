@@ -639,7 +639,16 @@ function runSandboxCreate() {
       ];
       if (policyPath) cmd.push("--policy", policyPath);
       const envArgs = [`CHAT_UI_URL=${chatUiUrl}`];
-      const loopbackNoProxy = "127.0.0.1,localhost,::1";
+      const loopbackNoProxy = [
+        "127.0.0.1",
+        "localhost",
+        "::1",
+        "navigator.navigator.svc.cluster.local",
+        ".svc",
+        ".svc.cluster.local",
+        "10.42.0.0/16",
+        "10.43.0.0/16",
+      ].join(",");
       const mergedNoProxy = [
         process.env.NO_PROXY || process.env.no_proxy || "",
         loopbackNoProxy,

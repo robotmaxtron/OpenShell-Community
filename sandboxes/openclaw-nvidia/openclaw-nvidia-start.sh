@@ -109,7 +109,6 @@ if chat_origin != local:
 cfg['gateway']['controlUi'] = {
     'allowInsecureAuth': True,
     'allowedOrigins': origins,
-    'dangerouslyAllowHostHeaderOriginFallback': True,
 }
 cfg['gateway']['trustedProxies'] = ['127.0.0.1', '::1']
 for provider in cfg.get('models', {}).get('providers', {}).values():

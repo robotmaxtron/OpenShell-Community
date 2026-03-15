@@ -568,12 +568,12 @@
   set_inference_route() {
     log "Configuring inference route..."
 
-    if "$CLI_BIN" inference set --provider nvidia-endpoints --model moonshotai/kimi-k2.5 >/dev/null 2>&1; then
+    if "$CLI_BIN" inference set --provider nvidia-endpoints --model qwen/qwen3.5-397b-a17b >/dev/null 2>&1; then
       log "Configured inference via '$CLI_BIN inference set'."
       return
     fi
 
-    if "$CLI_BIN" cluster inference set --provider nvidia-endpoints --model moonshotai/kimi-k2.5 >/dev/null 2>&1; then
+    if "$CLI_BIN" cluster inference set --provider nvidia-endpoints --model qwen/qwen3.5-397b-a17b >/dev/null 2>&1; then
       log "Configured inference via legacy '$CLI_BIN cluster inference set'."
       return
     fi

@@ -161,9 +161,9 @@
 
   /**
    * Five-state CTA button:
-   *  1. API empty  + tasks running        -> "Waiting for API key…"      (disabled)
-   *  2. API valid  + tasks running        -> "Provisioning Sandbox…"     (disabled, spinner)
-   *  3. API empty  + tasks complete       -> "Waiting for API key…"      (disabled)
+   *  1. !installTriggered                 -> "Waiting for API key…"      (disabled)
+   *  2. installTriggered + !sandboxReady  -> "Provisioning Sandbox…"     (disabled, spinner)
+   *  3. sandbox ready + !key valid        -> "Waiting for API key…"      (disabled)
    *  4. API valid  + sandbox ready + !key -> "Configuring API key…"      (disabled, spinner)
    *  5. API valid  + sandbox ready + key  -> "Open OpenShell"            (enabled)
    */
@@ -213,7 +213,7 @@
       btnSpinner.hidden = true;
       btnSpinner.style.display = "none";
       btnLaunchLabel.textContent = "Update API key to retry";
-    } else if (!sandboxReady && keyValid) {
+    } else if (!sandboxReady && installTriggered) {
       btnLaunch.disabled = true;
       btnLaunch.classList.remove("btn--ready");
       btnSpinner.hidden = false;
@@ -260,6 +260,7 @@
     setLogIcon(logGatewayIcon, null);
     logReady.hidden = true;
     updateButtonState();
+    setSandboxChecklistCreating();
 
     try {
       const res = await fetch("/api/install-openclaw", {
@@ -430,6 +431,7 @@
     }
     apiKeyInput.focus();
     updateButtonState();
+    if (!installTriggered && !installFailed) triggerInstall();
   });
 
   cardOther.addEventListener("click", () => {

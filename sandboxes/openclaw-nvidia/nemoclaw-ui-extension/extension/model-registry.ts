@@ -173,7 +173,7 @@ export function curatedToModelEntry(c: CuratedModel): ModelEntry {
   return {
     id: c.id,
     name: c.name,
-    isDefault: c.id === "curated-kimi-k25",
+    isDefault: c.id === "curated-qwen35",
     providerKey: key,
     modelRef: `${key}/${c.modelId}`,
     keyType: "inference",
@@ -208,19 +208,19 @@ const DEFAULT_PROVIDER_KEY = "curated-nvidia-endpoints";
 
 export const MODEL_REGISTRY: readonly ModelEntry[] = [
   {
-    id: "curated-kimi-k25",
-    name: "Kimi K2.5",
+    id: "curated-qwen35",
+    name: "Qwen 3.5 397B",
     isDefault: true,
     providerKey: DEFAULT_PROVIDER_KEY,
-    modelRef: `${DEFAULT_PROVIDER_KEY}/moonshotai/kimi-k2.5`,
+    modelRef: `${DEFAULT_PROVIDER_KEY}/qwen/qwen3.5-397b-a17b`,
     keyType: "inference",
     providerConfig: {
       baseUrl: "https://inference.local/v1",
       api: "openai-completions",
       models: [
         {
-          id: "moonshotai/kimi-k2.5",
-          name: "Kimi K2.5",
+          id: "qwen/qwen3.5-397b-a17b",
+          name: "Qwen 3.5 397B",
           reasoning: false,
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

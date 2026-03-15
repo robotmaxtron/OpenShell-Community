@@ -32,9 +32,9 @@ const PORT = parseInt(process.env.PORT || "8081", 10);
 const ROOT = __dirname;
 const REPO_ROOT = process.env.REPO_ROOT || path.join(ROOT, "..", "..");
 const CLI_BIN = process.env.CLI_BIN || "openshell";
-const SANDBOX_DIR = path.join(REPO_ROOT, "sandboxes", "nemoclaw");
-const SANDBOX_NAME = process.env.SANDBOX_NAME || "nemoclaw";
-const SANDBOX_START_CMD = process.env.SANDBOX_START_CMD || "nemoclaw-start";
+const SANDBOX_DIR = path.join(REPO_ROOT, "sandboxes", "openclaw-nvidia");
+const SANDBOX_NAME = process.env.SANDBOX_NAME || "openclaw-nvidia";
+const SANDBOX_START_CMD = process.env.SANDBOX_START_CMD || "openclaw-nvidia-start";
 const SANDBOX_BASE_IMAGE =
   process.env.SANDBOX_BASE_IMAGE ||
   "ghcr.io/nvidia/openshell-community/sandboxes/openclaw:latest";
@@ -45,8 +45,13 @@ const LOG_FILE = "/tmp/nemoclaw-sandbox-create.log";
 const PROVIDER_CONFIG_CACHE = "/tmp/nemoclaw-provider-config-cache.json";
 let _brevEnvId = process.env.BREV_ENV_ID || "";
 let detectedBrevId = "";
+let detectedPublicBaseUrl = "";
 
 const SANDBOX_PORT = 18789;
+const INFERENCE_BUNDLE_SETTLE_MS = parseInt(
+  process.env.INFERENCE_BUNDLE_SETTLE_MS || "6000",
+  10
+);
 
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g;
 
@@ -104,6 +109,27 @@ function log(prefix, msg) {
 
 function logWelcome(msg) {
   process.stderr.write(`[welcome-ui] ${msg}\n`);
+}
+
+function isNoisyProxyPath(method, requestPath) {
+  if (!requestPath) return false;
+  if (requestPath === "/api/pairing-bootstrap") return true;
+  if (requestPath === "/favicon.ico" || requestPath === "/favicon.svg") return true;
+  if ((method || "GET") === "GET" && (requestPath === "/" || requestPath === "/chat" || requestPath.startsWith("/chat?"))) return true;
+  if (requestPath === "/__openclaw/control-ui-config.json") return true;
+  if ((method || "GET") === "GET" && requestPath.startsWith("/avatar/main?meta=1")) return true;
+  if (requestPath.endsWith(".map")) return true;
+  if ((method || "GET") === "GET" && requestPath.startsWith("/assets/")) return true;
+  return false;
+}
+
+function shouldLogProxyRequest(method, requestPath) {
+  return !isNoisyProxyPath(method, requestPath);
+}
+
+function shouldLogProxyResponse(method, requestPath, statusCode) {
+  if ((statusCode || 0) >= 400) return true;
+  return !isNoisyProxyPath(method, requestPath);
 }
 
 /**
@@ -246,6 +272,9 @@ function bootstrapConfigCache() {
     "nvidia-inference": {
       OPENAI_BASE_URL: "https://inference-api.nvidia.com/v1",
     },
+    "nvidia-endpoints": {
+      NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1",
+    },
   });
   logWelcome("Bootstrapped provider config cache");
 }
@@ -285,13 +314,74 @@ function maybeDetectBrevId(host) {
   }
 }
 
-function buildOpenclawUrl(token) {
+function firstForwardedValue(headerValue) {
+  return String(headerValue || "")
+    .split(",")[0]
+    .trim();
+}
+
+function normalizeBaseUrl(baseUrl) {
+  if (!baseUrl) return "";
+  try {
+    const parsed = new URL(baseUrl);
+    return `${parsed.protocol}//${parsed.host}/`;
+  } catch {
+    return "";
+  }
+}
+
+function isLocalBrowserHost(host) {
+  return /^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?$/i.test(String(host || "").trim());
+}
+
+function derivePublicBaseUrl(req) {
+  const forwardedProto = firstForwardedValue(req?.headers?.["x-forwarded-proto"]);
+  const forwardedHost = firstForwardedValue(req?.headers?.["x-forwarded-host"]);
+  const host = firstForwardedValue(req?.headers?.host);
+  const proto = forwardedProto || (host && !isLocalBrowserHost(host) ? "https" : "http");
+  const authority = forwardedHost || host;
+  if (!authority) return "";
+  return normalizeBaseUrl(`${proto}://${authority}/`);
+}
+
+function rememberPublicBaseUrl(req) {
+  const resolved = derivePublicBaseUrl(req);
+  if (resolved) {
+    const resolvedHost = (() => {
+      try {
+        return new URL(resolved).host;
+      } catch {
+        return "";
+      }
+    })();
+    const hasDetectedPublicHost = (() => {
+      try {
+        return Boolean(detectedPublicBaseUrl) && !isLocalBrowserHost(new URL(detectedPublicBaseUrl).host);
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!isLocalBrowserHost(resolvedHost) || !hasDetectedPublicHost) {
+      detectedPublicBaseUrl = resolved;
+    }
+  }
+  return detectedPublicBaseUrl;
+}
+
+function buildOpenclawUrl(token, req = null) {
+  const dynamicBaseUrl =
+    normalizeBaseUrl(process.env.CHAT_UI_URL || "") ||
+    rememberPublicBaseUrl(req) ||
+    normalizeBaseUrl(detectedPublicBaseUrl);
   const brevId = _brevEnvId || detectedBrevId;
-  let url;
-  if (brevId) {
-    url = `https://80810-${brevId}.brevlab.com/`;
-  } else {
-    url = `http://127.0.0.1:${PORT}/`;
+  let url = dynamicBaseUrl;
+  if (!url) {
+    if (brevId) {
+      url = `https://80810-${brevId}.brevlab.com/`;
+    } else {
+      url = `http://127.0.0.1:${PORT}/`;
+    }
   }
   if (token) url += `#token=${token}`;
   return url;
@@ -628,7 +718,11 @@ function runSandboxCreate() {
         return;
       }
 
-      const chatUiUrl = buildOpenclawUrl(null);
+      const chatUiUrl = buildOpenclawUrl(null, {
+        headers: {
+          host: detectedPublicBaseUrl ? new URL(detectedPublicBaseUrl).host : "",
+        },
+      });
       const policyPath = await generateGatewayPolicy();
 
       const cmd = [
@@ -781,41 +875,63 @@ function hashKey(key) {
 }
 
 function runInjectKey(key, keyHash) {
-  log("inject-key", `step 1/3: received key (hash=${keyHash.slice(0, 12)}…)`);
+  log("inject-key", `step 1/4: received key (hash=${keyHash.slice(0, 12)}…)`);
 
-  const args = [
-    ...cliArgs("provider", "update", "nvidia-inference"),
-    "--credential", `OPENAI_API_KEY=${key}`,
-    "--config", "OPENAI_BASE_URL=https://inference-api.nvidia.com/v1",
+  const providerUpdates = [
+    {
+      name: "nvidia-inference",
+      credential: `OPENAI_API_KEY=${key}`,
+      config: "OPENAI_BASE_URL=https://inference-api.nvidia.com/v1",
+      cache: { OPENAI_BASE_URL: "https://inference-api.nvidia.com/v1" },
+    },
+    {
+      name: "nvidia-endpoints",
+      credential: `NVIDIA_API_KEY=${key}`,
+      config: "NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1",
+      cache: { NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1" },
+    },
   ];
-  log("inject-key", `step 2/3: running ${CLI_BIN} provider update nvidia-inference …`);
 
   const t0 = Date.now();
-  execCmd(args, 120000)
-    .then((result) => {
+  Promise.all(
+    providerUpdates.map(async (update) => {
+      const args = [
+        ...cliArgs("provider", "update", update.name),
+        "--credential", update.credential,
+        "--config", update.config,
+      ];
+      log("inject-key", `step 2/4: running ${CLI_BIN} provider update ${update.name} …`);
+      const result = await execCmd(args, 120000);
       const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-      log("inject-key", `         CLI exited ${result.code} in ${elapsed}s`);
+      log("inject-key", `         provider=${update.name} CLI exited ${result.code} in ${elapsed}s`);
       if (result.stdout.trim()) log("inject-key", `         stdout: ${result.stdout.trim()}`);
       if (result.stderr.trim()) log("inject-key", `         stderr: ${result.stderr.trim()}`);
 
       if (result.code !== 0) {
         const err = (result.stderr || result.stdout || "unknown error").trim();
-        log("inject-key", `step 3/3: FAILED — ${err}`);
-        injectKeyState.status = "error";
-        injectKeyState.error = err;
-        return;
+        throw new Error(`${update.name}: ${err}`);
       }
 
-      log("inject-key", "step 3/3: SUCCESS — provider nvidia-inference updated");
-      cacheProviderConfig("nvidia-inference", {
-        OPENAI_BASE_URL: "https://inference-api.nvidia.com/v1",
-      });
+      cacheProviderConfig(update.name, update.cache);
+      return update.name;
+    })
+  )
+    .then(async (updatedProviders) => {
+      log("inject-key", `step 3/4: SUCCESS — providers updated: ${updatedProviders.join(", ")}`);
+      if (sandboxState.status === "creating" || sandboxState.status === "running") {
+        log(
+          "inject-key",
+          `step 4/4: waiting ${Math.ceil(INFERENCE_BUNDLE_SETTLE_MS / 1000)}s for sandbox inference bundle refresh`
+        );
+        await sleep(INFERENCE_BUNDLE_SETTLE_MS);
+      }
       injectKeyState.status = "done";
       injectKeyState.error = null;
       injectKeyState.keyHash = keyHash;
+      log("inject-key", "step 4/4: inference providers ready");
     })
     .catch((e) => {
-      log("inject-key", `step 3/3: EXCEPTION — ${e}`);
+      log("inject-key", `step 3/4: FAILED — ${e}`);
       injectKeyState.status = "error";
       injectKeyState.error = String(e);
     });
@@ -1110,15 +1226,15 @@ async function handleClusterInferenceSet(req, res) {
 // ── Reverse proxy (HTTP) ───────────────────────────────────────────────────
 
 function proxyToSandbox(clientReq, clientRes) {
-  logWelcome(
-    `proxy http in ${clientReq.method || "GET"} ${clientReq.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`
-  );
+  if (shouldLogProxyRequest(clientReq.method, clientReq.url || "/")) {
+    logWelcome(
+      `proxy http in ${clientReq.method || "GET"} ${clientReq.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`
+    );
+  }
   const headers = {};
   for (const [key, val] of Object.entries(clientReq.headers)) {
-    if (key.toLowerCase() === "host") continue;
     headers[key] = val;
   }
-  headers["host"] = `127.0.0.1:${SANDBOX_PORT}`;
 
   const opts = {
     hostname: "127.0.0.1",
@@ -1130,9 +1246,11 @@ function proxyToSandbox(clientReq, clientRes) {
   };
 
   const upstream = http.request(opts, (upstreamRes) => {
-    logWelcome(
-      `proxy http out ${clientReq.method || "GET"} ${clientReq.url || "/"} status=${upstreamRes.statusCode || 0}`
-    );
+    if (shouldLogProxyResponse(clientReq.method, clientReq.url || "/", upstreamRes.statusCode || 0)) {
+      logWelcome(
+        `proxy http out ${clientReq.method || "GET"} ${clientReq.url || "/"} status=${upstreamRes.statusCode || 0}`
+      );
+    }
     // Filter hop-by-hop + content-length (we'll set our own)
     const outHeaders = {};
     for (const [key, val] of Object.entries(upstreamRes.headers)) {
@@ -1171,7 +1289,9 @@ function proxyToSandbox(clientReq, clientRes) {
 // ── Reverse proxy (WebSocket) ──────────────────────────────────────────────
 
 function proxyWebSocket(req, clientSocket, head) {
-  logWelcome(`proxy ws in ${req.method || "GET"} ${req.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`);
+  if (shouldLogProxyRequest(req.method, req.url || "/")) {
+    logWelcome(`proxy ws in ${req.method || "GET"} ${req.url || "/"} -> 127.0.0.1:${SANDBOX_PORT}`);
+  }
   const upstream = net.createConnection(
     { host: "127.0.0.1", port: SANDBOX_PORT },
     () => {
@@ -1181,11 +1301,7 @@ function proxyWebSocket(req, clientSocket, head) {
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         const key = req.rawHeaders[i];
         const val = req.rawHeaders[i + 1];
-        if (key.toLowerCase() === "host") {
-          headers += `Host: 127.0.0.1:${SANDBOX_PORT}\r\n`;
-        } else {
-          headers += `${key}: ${val}\r\n`;
-        }
+        headers += `${key}: ${val}\r\n`;
       }
       upstream.write(reqLine + headers + "\r\n");
       if (head && head.length) upstream.write(head);
@@ -1218,7 +1334,7 @@ async function handleSandboxStatus(req, res) {
     (await portOpen("127.0.0.1", SANDBOX_PORT))
   ) {
     const token = readOpenclawToken();
-    const url = buildOpenclawUrl(token);
+    const url = buildOpenclawUrl(token, req);
     sandboxState.status = "running";
     sandboxState.url = url;
     state.status = "running";
@@ -1497,6 +1613,7 @@ function serveStaticFile(req, res, pathname) {
 
 async function handleRequest(req, res) {
   maybeDetectBrevId(req.headers.host || "");
+  rememberPublicBaseUrl(req);
 
   const parsedUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const pathname = parsedUrl.pathname;
@@ -1584,6 +1701,7 @@ const server = http.createServer((req, res) => {
 // WebSocket upgrade handler — checked BEFORE route matching (mirrors Python)
 server.on("upgrade", async (req, socket, head) => {
   maybeDetectBrevId(req.headers.host || "");
+  rememberPublicBaseUrl(req);
 
   if (await sandboxReady()) {
     proxyWebSocket(req, socket, head);
@@ -1601,6 +1719,7 @@ function _resetForTesting() {
   injectKeyState.error = null;
   injectKeyState.keyHash = null;
   detectedBrevId = "";
+  detectedPublicBaseUrl = "";
   _brevEnvId = "";
   renderedIndex = null;
   _nvidiaApiKey = "";

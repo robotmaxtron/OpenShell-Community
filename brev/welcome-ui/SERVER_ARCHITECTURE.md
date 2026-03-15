@@ -121,12 +121,12 @@ The server operates in **two distinct modes** depending on sandbox readiness:
 |----------|-------|-------------|
 | `ROOT` | `os.path.dirname(os.path.abspath(__file__))` | Directory containing `server.py` |
 | `REPO_ROOT` | env or `ROOT/../../` | Repository root |
-| `SANDBOX_DIR` | `REPO_ROOT/sandboxes/nemoclaw` | Sandbox image source directory |
+| `SANDBOX_DIR` | `REPO_ROOT/sandboxes/openclaw-nvidia` | Sandbox image source directory |
 | `POLICY_FILE` | `SANDBOX_DIR/policy.yaml` | Source policy for gateway creation |
 | `LOG_FILE` | `/tmp/nemoclaw-sandbox-create.log` | Sandbox creation log (written by subprocess) |
 | `PROVIDER_CONFIG_CACHE` | `/tmp/nemoclaw-provider-config-cache.json` | Provider config values cache |
 | `OTHER_AGENTS_YAML` | `ROOT/other-agents.yaml` | YAML modal definition file |
-| `NEMOCLAW_IMAGE` | `ghcr.io/nvidia/openshell-community/sandboxes/nemoclaw:local` | (Currently unused, commented out) |
+| `NEMOCLAW_IMAGE` | `ghcr.io/nvidia/openshell-community/sandboxes/openclaw-nvidia:local` | Optional image override |
 | `SANDBOX_PORT` | `18789` | Port the sandbox listens on (localhost) |
 
 ### Hardcoded Constants
@@ -147,7 +147,9 @@ main()
   │
   ├── 1. _bootstrap_config_cache()
   │       If /tmp/nemoclaw-provider-config-cache.json does NOT exist:
-  │         Write default: {"nvidia-inference": {"OPENAI_BASE_URL": "https://inference-api.nvidia.com/v1"}}
+  │         Write defaults for:
+  │           - nvidia-inference → OPENAI_BASE_URL=https://inference-api.nvidia.com/v1
+  │           - nvidia-endpoints → NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
   │       If it already exists: skip (no-op)
   │
   ├── 2. Create ThreadingHTTPServer on ("", PORT)
@@ -330,7 +332,7 @@ Global: _inject_key_state (dict, protected by _inject_key_lock)
 ```json
 {
     "status": "idle" | "creating" | "running" | "error",
-    "url": "https://80810-xxx.brevlab.com/?token=abc123" | null,
+    "url": "https://<public-welcome-ui-host>/#token=abc123" | null,
     "error": "error message" | null,
     "key_injected": true | false,
     "key_inject_error": "error message" | null
@@ -370,21 +372,21 @@ Global: _inject_key_state (dict, protected by _inject_key_lock)
 ```
 Step 1: Set state to "creating"
 Step 2: _cleanup_existing_sandbox()
-          → runs: nemoclaw sandbox delete nemoclaw
+          → runs: openshell sandbox delete openclaw-nvidia
           → ignores all errors (best-effort cleanup)
 Step 3: Build chat UI URL (no token yet)
 Step 4: _generate_gateway_policy()
-          → Read POLICY_FILE (sandboxes/nemoclaw/policy.yaml)
+          → Read POLICY_FILE (sandboxes/openclaw-nvidia/policy.yaml)
           → Strip "inference" and "process" fields from the YAML
           → Write stripped YAML to a tempfile
           → Return tempfile path (or None if source not found)
 Step 5: Build and run command:
-          nemoclaw sandbox create \
-            --name nemoclaw \
+          openshell sandbox create \
+            --name openclaw-nvidia \
             --from nemoclaw \
             --forward 18789 \
             [--policy <temp_policy_path>] \
-            -- env CHAT_UI_URL=<url> nemoclaw-start
+            -- env CHAT_UI_URL=<url> openclaw-nvidia-start
 Step 6: Stream stdout (merged with stderr) to LOG_FILE and to stderr
           → Uses subprocess.Popen with stdout=PIPE, stderr=STDOUT
           → A daemon thread reads lines and writes to both destinations
@@ -992,15 +994,20 @@ Detection is **idempotent** — once a Brev ID is detected from a Host header, i
 
 ### URL Building
 
-```
-_build_openclaw_url(token):
-    If Brev ID available:
-        → https://80810-{brev_id}.brevlab.com/[?token=xxx]
-    Else:
-        → http://127.0.0.1:{PORT}/[?token=xxx]
-```
+`buildOpenclawUrl(token, req)` is now request-aware and prefers the browser-visible welcome UI origin.
 
-**The URL points to the welcome-ui server itself** (port 8081 = `80810` in Brev URL format), NOT directly to port 18789. This is critical because:
+Resolution order:
+
+1. `CHAT_UI_URL` environment override, if set
+2. `X-Forwarded-Proto` + `X-Forwarded-Host` from the incoming request
+3. Incoming request `Host`
+4. Last detected public welcome UI base URL cached from prior requests
+5. Brev fallback: `https://80810-{brev_id}.brevlab.com/`
+6. Local fallback: `http://127.0.0.1:{PORT}/`
+
+If a token is present, it is appended as a URL fragment: `#token=...`
+
+**The URL points to the welcome-ui server itself**, not directly to port 18789. This is critical because:
 - Brev's port-forwarding creates subdomains per port
 - Cross-origin requests between Brev port subdomains are blocked
 - By proxying through port 8081, the browser stays on one origin
@@ -1119,8 +1126,8 @@ All CLI commands are executed via `subprocess.run()` or `subprocess.Popen()`. Ev
 
 | Command | Timeout | Used By |
 |---------|---------|---------|
-| `nemoclaw sandbox create --name ... --from ... --forward ... [--policy ...] -- env ... nemoclaw-start` | None (Popen, waited manually) | `_run_sandbox_create` |
-| `nemoclaw sandbox delete nemoclaw` | 30s | `_cleanup_existing_sandbox` |
+| `openshell sandbox create --name ... --from ... --forward ... [--policy ...] -- env ... openclaw-nvidia-start` | None (Popen, waited manually) | `_run_sandbox_create` |
+| `openshell sandbox delete openclaw-nvidia` | 30s | `_cleanup_existing_sandbox` |
 | `nemoclaw provider list --names` | 30s | `_handle_providers_list` |
 | `nemoclaw provider get <name>` | 30s | `_handle_providers_list` |
 | `nemoclaw provider create --name <n> --type <t> --credential K=V --config K=V` | 30s | `_handle_provider_create` |
@@ -1162,7 +1169,7 @@ All CLI commands are executed via `subprocess.run()` or `subprocess.Popen()`. Ev
 re.search(r"token=([A-Za-z0-9_\-]+)", content)
 ```
 
-The token is found in URLs printed by the `nemoclaw-start.sh` script inside the sandbox.
+The token is found in URLs printed by the `openclaw-nvidia-start.sh` script inside the sandbox.
 
 ### Gateway Readiness Sentinel
 
@@ -1170,7 +1177,7 @@ The token is found in URLs printed by the `nemoclaw-start.sh` script inside the 
 "OpenClaw gateway starting in background" in f.read()
 ```
 
-This exact string is printed by `nemoclaw-start.sh` after the OpenClaw gateway has been backgrounded.
+This exact string is printed by `openclaw-nvidia-start.sh` after the OpenClaw gateway has been backgrounded.
 
 ---
 

@@ -287,14 +287,14 @@ derive_chat_ui_url() {
   fi
 
   if [[ -n "${BREV_ENV_ID:-}" ]]; then
-    printf 'https://openclaw0-%s.brevlab.com/chat?session=main\n' "$BREV_ENV_ID"
+    printf 'https://openclaw0-%s.brevlab.com\n' "$BREV_ENV_ID"
     return
   fi
 
   host_name="$(hostname 2>/dev/null || true)"
   env_id="$(printf '%s\n' "$host_name" | sed -E 's/^brev-([[:alnum:]]+)$/\1/')"
   if [[ -n "$env_id" && "$env_id" != "$host_name" ]]; then
-    printf 'https://openclaw0-%s.brevlab.com/chat?session=main\n' "$env_id"
+    printf 'https://openclaw0-%s.brevlab.com\n' "$env_id"
     return
   fi
 

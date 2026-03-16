@@ -12,6 +12,7 @@ Everything from the `openclaw` sandbox (OpenClaw CLI, gateway, Node.js 22, devel
 - **NeMoClaw Nav Group** — sidebar navigation with status indicators for key configuration
 - **Contextual Nudges** — inline links in error states that guide users to configure missing API keys
 - **openclaw-nvidia-start** — startup script that injects API keys, onboards, and starts the gateway
+- **Inference injection** — for requests to `integrate.api.nvidia.com`, the policy-proxy injects `stream: true`, headers `NVCF-POLL-SECONDS: 1800` and `X-BILLING-INVOKE-ORIGIN: openshell`, per-model thinking/reasoning (e.g. `chat_template_kwargs`, `reasoning_effort`), and default sampling (temperature, top_p, max_tokens). See [Inference options](#inference-options-for-integratenvidia) below.
 
 ## Build
 
@@ -77,6 +78,22 @@ openclaw gateway run
 
 Note: without running `openclaw-nvidia-start`, the API key placeholders will remain as literals and model endpoints will not work unless keys are entered via the UI.
 
+## Inference options for integrate.nvidia
+
+When the sandbox sends completion requests through the policy-proxy (e.g. to `/v1/chat/completions` or `/v1/completions`), the proxy injects the following so that **integrate.api.nvidia.com** receives the correct parameters without depending on the OpenClaw gateway:
+
+- **Headers**: `NVCF-POLL-SECONDS: 1800`, `X-BILLING-INVOKE-ORIGIN: openshell`
+- **Body**: The `model` field is rewritten to the prefixed form `private/openshell/<model-id>` (e.g. `private/openshell/z-ai/glm5`) for all curated models. Also: `stream: true` (unless explicitly disabled), default sampling (`temperature: 1.0`, `top_p: 0.95`, `max_tokens: 8192`; max_tokens can be set up to context length; retry with 4× max_tokens when `finish_reason` is `"length"`), and per-model options:
+  - **Kimi K2.5**: `chat_template_kwargs: { "thinking": true }`
+  - **MiniMax M2.5**: thinking-only model (no extra body)
+  - **GLM 5**: `chat_template_kwargs: { "enable_thinking": true }`
+  - **Nemotron 3 Super**: `chat_template_kwargs: { "enable_thinking": true, "force_nonempty_content": true }`
+  - **GPT-OSS 120B**: `reasoning_effort: "high"`
+
+The mapping is defined in `inference-options.js` (same directory as `policy-proxy.js`). The model selector in the UI shows a small badge (e.g. "Thinking", "Reasoning: high") for models that have these options. On the Inference page, the gateway strip tooltip describes the injected options.
+
+For the **exact POST request body and headers** sent to integrate.api.nvidia.com for each model, see [docs/integrate-nvidia-requests.md](docs/integrate-nvidia-requests.md).
+
 ## How the Extension Works
 
 The extension source lives in `nemoclaw-ui-extension/extension/` within this directory. At Docker build time:
@@ -94,7 +111,7 @@ At runtime, the extension bootstraps via `MutationObserver`, detecting OpenClaw 
 | File | Purpose |
 |---|---|
 | `index.ts` | Entry point — bootstraps all components, wires `data-nemoclaw-goto` navigation |
-| `model-registry.ts` | Model definitions, API key getters/setters (localStorage + env fallback) |
+| `model-registry.ts` | Model definitions, API key getters/setters, inference-options display (thinking/reasoning badges) |
 | `model-selector.ts` | Dropdown to switch between NVIDIA models |
 | `deploy-modal.ts` | Deploy-to-DGX modal with target selection |
 | `api-keys-page.ts` | API Keys settings page with masked inputs and save/validation |

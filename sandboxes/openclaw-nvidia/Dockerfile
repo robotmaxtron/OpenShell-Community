@@ -32,8 +32,10 @@ RUN chmod +x /usr/local/bin/openclaw-nvidia-start
 
 # Install the policy reverse proxy (sits in front of the OpenClaw gateway,
 # intercepts /api/policy to read/write the sandbox policy file) and its
-# runtime dependencies for gRPC gateway sync.
+# runtime dependencies for gRPC gateway sync. inference-options.js is required
+# by policy-proxy for integrate.nvidia completion request injection.
 COPY policy-proxy.js /usr/local/lib/policy-proxy.js
+COPY inference-options.js /usr/local/lib/inference-options.js
 COPY proto/ /usr/local/lib/nemoclaw-proto/
 RUN npm install -g @grpc/grpc-js @grpc/proto-loader js-yaml
 

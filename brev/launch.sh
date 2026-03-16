@@ -566,19 +566,23 @@
   }
 
   set_inference_route() {
+    # Set the default inference route to one model (nvidia-endpoints + kimi-k2.5).
+    # Canonical CLI per brev/welcome-ui/SERVER_ARCHITECTURE.md: cluster inference set
+    # (CLI_BIN is either "openshell" or "nemoclaw"; both accept the same subcommands.)
+    # Try canonical first, then "inference set" as fallback for other CLI versions.
     log "Configuring inference route..."
 
-    if "$CLI_BIN" inference set --provider nvidia-endpoints --model minimaxai/minimax-m2.5 --no-verify >/dev/null 2>&1; then
+    if "$CLI_BIN" cluster inference set --provider nvidia-endpoints --model moonshotai/kimi-k2.5 --no-verify >/dev/null 2>&1; then
+      log "Configured inference via '$CLI_BIN cluster inference set'."
+      return
+    fi
+
+    if "$CLI_BIN" inference set --provider nvidia-endpoints --model moonshotai/kimi-k2.5 --no-verify >/dev/null 2>&1; then
       log "Configured inference via '$CLI_BIN inference set'."
       return
     fi
 
-    if "$CLI_BIN" cluster inference set --provider nvidia-endpoints --model minimaxai/minimax-m2.5 --no-verify >/dev/null 2>&1; then
-      log "Configured inference via legacy '$CLI_BIN cluster inference set'."
-      return
-    fi
-
-    log "Unable to configure inference route with either current or legacy CLI commands."
+    log "Unable to configure inference route with either 'cluster inference set' or 'inference set'."
     exit 1
   }
 

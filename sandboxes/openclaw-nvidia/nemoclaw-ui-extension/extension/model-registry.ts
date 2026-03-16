@@ -130,15 +130,15 @@ export interface CuratedModel {
 
 export const CURATED_MODELS: readonly CuratedModel[] = [
   {
-    id: "curated-minimax-m25",
-    name: "MiniMax M2.5",
-    modelId: "minimaxai/minimax-m2.5",
-    providerName: "nvidia-endpoints",
-  },
-  {
     id: "curated-kimi-k25",
     name: "Kimi K2.5",
     modelId: "moonshotai/kimi-k2.5",
+    providerName: "nvidia-endpoints",
+  },
+  {
+    id: "curated-minimax-m25",
+    name: "MiniMax M2.5",
+    modelId: "minimaxai/minimax-m2.5",
     providerName: "nvidia-endpoints",
   },
   {
@@ -148,15 +148,15 @@ export const CURATED_MODELS: readonly CuratedModel[] = [
     providerName: "nvidia-endpoints",
   },
   {
-    id: "curated-qwen35",
-    name: "Qwen 3.5 397B",
-    modelId: "qwen/qwen3.5-397b-a17b",
-    providerName: "nvidia-endpoints",
-  },
-  {
     id: "curated-gpt-oss-120b",
     name: "GPT-OSS 120B",
     modelId: "openai/gpt-oss-120b",
+    providerName: "nvidia-endpoints",
+  },
+  {
+    id: "curated-nemotron-super",
+    name: "Nemotron 3 Super",
+    modelId: "nvidia/nemotron-3-super",
     providerName: "nvidia-endpoints",
   },
 ];
@@ -166,7 +166,7 @@ export function curatedToModelEntry(c: CuratedModel): ModelEntry {
   return {
     id: c.id,
     name: c.name,
-    isDefault: c.id === "curated-minimax-m25",
+    isDefault: c.id === "curated-kimi-k25",
     providerKey: key,
     modelRef: `${key}/${c.modelId}`,
     keyType: "inference",
@@ -194,6 +194,40 @@ export function getCuratedByModelId(modelId: string): CuratedModel | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// Inference options for display (mirrors inference-options.js for UI)
+// Used to show "Thinking", "Reasoning: high", and sampling in the model selector.
+// ---------------------------------------------------------------------------
+
+export interface InferenceOptionsDisplay {
+  thinkingLabel?: string;
+  reasoningLabel?: string;
+  sampling?: { temperature: number; top_p: number; max_tokens: number };
+}
+
+/** Default sampling applied by policy-proxy for integrate.nvidia (must match inference-options.js) */
+export const DEFAULT_SAMPLING_DISPLAY: InferenceOptionsDisplay["sampling"] = {
+  temperature: 1.0,
+  top_p: 0.95,
+  max_tokens: 8192,
+};
+
+const INFERENCE_OPTIONS_DISPLAY: Record<string, InferenceOptionsDisplay> = {
+  "moonshotai/kimi-k2.5": { thinkingLabel: "Thinking", sampling: DEFAULT_SAMPLING_DISPLAY },
+  "minimaxai/minimax-m2.5": { thinkingLabel: "Thinking only", sampling: DEFAULT_SAMPLING_DISPLAY },
+  "z-ai/glm5": { thinkingLabel: "Thinking", sampling: DEFAULT_SAMPLING_DISPLAY },
+  "nvidia/nemotron-3-super": {
+    thinkingLabel: "Thinking + force content",
+    sampling: DEFAULT_SAMPLING_DISPLAY,
+  },
+  "openai/gpt-oss-120b": { reasoningLabel: "Reasoning: high", sampling: DEFAULT_SAMPLING_DISPLAY },
+};
+
+export function getInferenceOptionsForDisplay(modelId: string): InferenceOptionsDisplay | undefined {
+  if (!modelId) return undefined;
+  return INFERENCE_OPTIONS_DISPLAY[modelId];
+}
+
+// ---------------------------------------------------------------------------
 // Legacy MODEL_REGISTRY — kept as the default model reference for bootstrap
 // ---------------------------------------------------------------------------
 
@@ -201,19 +235,19 @@ const DEFAULT_PROVIDER_KEY = "curated-nvidia-endpoints";
 
 export const MODEL_REGISTRY: readonly ModelEntry[] = [
   {
-    id: "curated-minimax-m25",
-    name: "MiniMax M2.5",
+    id: "curated-kimi-k25",
+    name: "Kimi K2.5",
     isDefault: true,
     providerKey: DEFAULT_PROVIDER_KEY,
-    modelRef: `${DEFAULT_PROVIDER_KEY}/minimaxai/minimax-m2.5`,
+    modelRef: `${DEFAULT_PROVIDER_KEY}/moonshotai/kimi-k2.5`,
     keyType: "inference",
     providerConfig: {
       baseUrl: "https://inference.local/v1",
       api: "openai-completions",
       models: [
         {
-          id: "minimaxai/minimax-m2.5",
-          name: "MiniMax M2.5",
+          id: "moonshotai/kimi-k2.5",
+          name: "Kimi K2.5",
           reasoning: false,
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -382,7 +416,7 @@ const UPGRADE_INTEGRATIONS_BASE = "https://build.nvidia.com/openshell/integratio
 
 /**
  * URL for upgrading the same model via an NVIDIA Cloud Partner.
- * Use when active route is NVIDIA free tier; pass current model id (e.g. qwen/qwen3.5-397b-a17b).
+ * Use when active route is NVIDIA free tier; pass current model id (e.g. z-ai/glm5).
  * Query param uses short name only (e.g. minimax-m2.5) so integrations page resolves correctly.
  */
 export function getUpgradeIntegrationsUrl(modelId: string): string {

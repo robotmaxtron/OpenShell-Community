@@ -12,10 +12,19 @@
 
 const http = require("http");
 const fs = require("fs");
+const path = require("path");
 const os = require("os");
 const net = require("net");
 const crypto = require("crypto");
 const { execFile } = require("child_process");
+
+// Inference options for integrate.nvidia: thinking, sampling, headers
+let inferenceOptions;
+try {
+  inferenceOptions = require(path.join(__dirname, "inference-options.js"));
+} catch (e) {
+  inferenceOptions = null;
+}
 
 const POLICY_PATH = process.env.POLICY_PATH || "/etc/openshell/policy.yaml";
 const UPSTREAM_PORT = parseInt(process.env.UPSTREAM_PORT || "18788", 10);
@@ -756,6 +765,100 @@ function scheduleStartupAudit(attempt = 1) {
 }
 
 // ---------------------------------------------------------------------------
+// Inference injection for integrate.nvidia (completion requests)
+// ---------------------------------------------------------------------------
+
+const COMPLETION_PATHS = ["/v1/chat/completions", "/v1/completions"];
+const NVCF_POLL_SECONDS = process.env.NVCF_POLL_SECONDS || "1800";
+const BILLING_ORIGIN = "openshell";
+
+function isCompletionPost(method, requestPath) {
+  if ((method || "").toUpperCase() !== "POST" || !requestPath) return false;
+  const p = requestPath.split("?")[0];
+  return COMPLETION_PATHS.some((base) => p === base || p.endsWith(base));
+}
+
+/**
+ * Merge inference options (stream, extra_body, sampling) and inject headers
+ * for integrate.nvidia. Then forward the modified request to the gateway.
+ */
+function proxyCompletionRequest(clientReq, clientRes, bodyBuffer) {
+  const requestPath = clientReq.url || "/";
+  if (shouldLogProxyRequest(clientReq.method, requestPath)) {
+    console.log(`[policy-proxy] http in  ${formatRequestLine(clientReq)} -> ${UPSTREAM_HOST}:${UPSTREAM_PORT} (inference inject)`);
+  }
+
+  let body;
+  try {
+    body = JSON.parse(bodyBuffer.toString("utf8"));
+  } catch (e) {
+    clientRes.writeHead(400, { "Content-Type": "application/json" });
+    clientRes.end(JSON.stringify({ error: "invalid JSON body" }));
+    return;
+  }
+
+  if (!inferenceOptions) {
+    forwardWithBody(clientReq, clientRes, bodyBuffer, clientReq.headers);
+    return;
+  }
+
+  const modelRef = body.model;
+  const { extraBody, sampling } = inferenceOptions.getInferenceOptions(modelRef || "");
+
+  if (body.stream !== false) body.stream = true;
+  if (Object.keys(extraBody).length > 0) {
+    if (extraBody.chat_template_kwargs) {
+      body.chat_template_kwargs = { ...(body.chat_template_kwargs || {}), ...extraBody.chat_template_kwargs };
+    }
+    if (extraBody.reasoning_effort != null) body.reasoning_effort = extraBody.reasoning_effort;
+  }
+  for (const [k, v] of Object.entries(sampling)) {
+    if (body[k] === undefined) body[k] = v;
+  }
+  const prefixedModel = inferenceOptions.getModelIdForRequest(inferenceOptions.toModelId(modelRef || ""));
+  if (prefixedModel) body.model = prefixedModel;
+
+  const newBody = Buffer.from(JSON.stringify(body), "utf8");
+  const headers = { ...clientReq.headers };
+  headers["content-length"] = String(newBody.length);
+  headers["NVCF-POLL-SECONDS"] = NVCF_POLL_SECONDS;
+  headers["X-BILLING-INVOKE-ORIGIN"] = BILLING_ORIGIN;
+
+  forwardWithBody(clientReq, clientRes, newBody, headers);
+}
+
+function forwardWithBody(clientReq, clientRes, bodyBuffer, headers) {
+  const opts = {
+    hostname: UPSTREAM_HOST,
+    port: UPSTREAM_PORT,
+    path: clientReq.url,
+    method: clientReq.method,
+    headers,
+  };
+
+  const upstream = http.request(opts, (upstreamRes) => {
+    if (shouldLogProxyResponse(clientReq.method, clientReq.url || "/", upstreamRes.statusCode || 0)) {
+      console.log(
+        `[policy-proxy] http out ${clientReq.method || "GET"} ${clientReq.url || "/"} ` +
+        `status=${upstreamRes.statusCode || 0}`
+      );
+    }
+    clientRes.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+    upstreamRes.pipe(clientRes, { end: true });
+  });
+
+  upstream.on("error", (err) => {
+    console.error("[proxy] upstream error:", err.message);
+    if (!clientRes.headersSent) {
+      clientRes.writeHead(502, { "Content-Type": "application/json" });
+    }
+    clientRes.end(JSON.stringify({ error: "upstream unavailable" }));
+  });
+
+  upstream.end(bodyBuffer);
+}
+
+// ---------------------------------------------------------------------------
 // HTTP proxy helpers
 // ---------------------------------------------------------------------------
 
@@ -950,6 +1053,22 @@ const server = http.createServer((req, res) => {
 
   if (shouldArmPairingFromRequest(req)) {
     startPairingBootstrap(`http:${req.url}`);
+  }
+
+  // Intercept POST to completion endpoints: inject integrate.nvidia headers and body
+  if (isCompletionPost(req.method, req.url)) {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      proxyCompletionRequest(req, res, Buffer.concat(chunks));
+    });
+    req.on("error", () => {
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "request body error" }));
+      }
+    });
+    return;
   }
 
   proxyRequest(req, res);

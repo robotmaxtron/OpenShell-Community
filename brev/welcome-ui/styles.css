@@ -389,6 +389,161 @@ body {
   font-style: italic;
 }
 
+/* ── Inference provider picker ───────────── */
+
+.provider-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.provider-picker__heading {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.provider-picker__back {
+  align-self: flex-start;
+  padding: 6px 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font);
+  margin-bottom: 8px;
+}
+
+.provider-picker__back:hover {
+  color: var(--nv-green);
+}
+
+.provider-picker__nvidia-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border: 1px solid var(--nv-green-border);
+  border-radius: var(--radius-md);
+  background: var(--nv-green-subtle);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.provider-picker__nvidia-row:hover {
+  border-color: var(--nv-green);
+  background: rgba(118, 185, 0, 0.12);
+}
+
+/* Base: all logos same rendered size, clamp intrinsic dimensions */
+.provider-picker__logo {
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+  object-position: center;
+  box-sizing: border-box;
+}
+
+/* NVIDIA row: same visual size as partner logos for consistency */
+.provider-picker__nvidia-row .provider-picker__logo,
+.provider-picker__logo--nvidia {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  max-width: 32px;
+  max-height: 32px;
+}
+
+.provider-picker__nvidia-row .provider-picker__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.provider-picker__badge--free {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nv-green);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.provider-picker__partners-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.provider-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+.provider-picker__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.provider-picker__tile:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+}
+
+.provider-picker__tile .provider-picker__logo {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  max-width: 32px;
+  max-height: 32px;
+}
+
+.provider-picker__tile .provider-picker__name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.install-nvidia-key .provider-picker__back {
+  margin-bottom: 12px;
+}
+
+.partner-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.partner-instructions__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px 0;
+}
+
+.partner-instructions__block .instructions-section {
+  margin-top: 12px;
+}
+
 /* ── Form fields ─────────────────────────── */
 
 .form-field {

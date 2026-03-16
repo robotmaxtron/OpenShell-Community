@@ -151,7 +151,7 @@ describe("POST /api/cluster-inference", () => {
     expect(res.status).toBe(400);
   });
 
-  it("TC-CI10: calls nemoclaw cluster inference set with --provider, --model, and --no-verify", async () => {
+  it("TC-CI10: calls CLI (openshell or nemoclaw) with cluster inference set or inference set, --provider, --model, --no-verify", async () => {
     execFile.mockImplementation((cmd, args, opts, cb) => {
       if (typeof opts === "function") { cb = opts; opts = {}; }
       cb(null, "", "");
@@ -162,7 +162,7 @@ describe("POST /api/cluster-inference", () => {
       .send({ providerName: "test-prov", modelId: "test-model" });
 
     const setCall = execFile.mock.calls.find(
-      (c) => c[0] === "nemoclaw" && c[1]?.includes("inference") && c[1]?.includes("set")
+      (c) => (c[0] === "openshell" || c[0] === "nemoclaw") && c[1]?.includes("inference") && c[1]?.includes("set")
     );
     expect(setCall).toBeDefined();
     const args = setCall[1];

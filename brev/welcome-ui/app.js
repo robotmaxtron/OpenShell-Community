@@ -14,6 +14,9 @@
 
   // Install modal elements
   const installMain = $("#install-main");
+  const installNvidiaKey = $("#install-nvidia-key");
+  const installProviderPicker = $("#install-provider-picker");
+  const installPartnerInstructions = $("#install-partner-instructions");
   const stepError = $("#install-step-error");
   const apiKeyInput = $("#api-key-input");
   const toggleKeyVis = $("#toggle-key-vis");
@@ -233,6 +236,24 @@
     stepError.hidden = true;
   }
 
+  // -- Install modal screens (picker / NVIDIA / partner) -----------------
+
+  function showInstallScreen(screen, providerId) {
+    if (installProviderPicker) installProviderPicker.hidden = screen !== "picker";
+    if (installNvidiaKey) installNvidiaKey.hidden = screen !== "nvidia";
+    if (installPartnerInstructions) {
+      installPartnerInstructions.hidden = screen !== "partner";
+      if (screen === "partner" && providerId) {
+        const content = $("#partner-instructions-content");
+        if (content) {
+          content.querySelectorAll("[id^=\"provider-instructions-\"]").forEach((el) => {
+            el.hidden = el.id !== "provider-instructions-" + providerId;
+          });
+        }
+      }
+    }
+  }
+
   function showError(msg) {
     stopPolling();
     installMain.hidden = true;
@@ -387,6 +408,7 @@
         updateButtonState();
 
         showOverlay(overlayInstall);
+        showInstallScreen("nvidia");
         if (!keyInjected) {
           startPolling();
         }
@@ -398,6 +420,7 @@
         updateButtonState();
 
         showOverlay(overlayInstall);
+        showInstallScreen("nvidia");
         startPolling();
       }
     } catch {
@@ -425,13 +448,19 @@
     showOverlay(overlayInstall);
     if (installFailed) {
       stepError.hidden = false;
-      installMain.hidden = true;
+      if (installProviderPicker) installProviderPicker.hidden = true;
+      if (installNvidiaKey) installNvidiaKey.hidden = true;
+      if (installPartnerInstructions) installPartnerInstructions.hidden = true;
     } else {
-      showMainView();
+      if (installProviderPicker) {
+        showInstallScreen("picker");
+      } else {
+        showInstallScreen("nvidia");
+        apiKeyInput.focus();
+        if (!installTriggered) triggerInstall();
+      }
     }
-    apiKeyInput.focus();
     updateButtonState();
-    if (!installTriggered && !installFailed) triggerInstall();
   });
 
   cardOther.addEventListener("click", () => {
@@ -441,6 +470,48 @@
 
   closeInstall.addEventListener("click", () => hideOverlay(overlayInstall));
   closeInstr.addEventListener("click", () => hideOverlay(overlayInstr));
+
+  const backFromNvidia = $("#back-from-nvidia");
+  if (backFromNvidia) {
+    backFromNvidia.addEventListener("click", () => showInstallScreen("picker"));
+  }
+  document.addEventListener("click", (e) => {
+    const backPartner = e.target.closest("#back-from-partner");
+    if (backPartner) showInstallScreen("picker");
+  });
+
+  const installBody = $("#install-body");
+  if (installBody) {
+    installBody.addEventListener("click", (e) => {
+      const tile = e.target.closest("[data-provider-id]");
+      if (!tile) return;
+      const id = tile.getAttribute("data-provider-id");
+      if (!id) return;
+      e.preventDefault();
+      if (id === "nvidia") {
+        showInstallScreen("nvidia");
+        apiKeyInput.focus();
+        if (!installTriggered && !installFailed) triggerInstall();
+      } else {
+        showInstallScreen("partner", id);
+      }
+    });
+    installBody.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const tile = e.target.closest("[data-provider-id]");
+      if (!tile) return;
+      const id = tile.getAttribute("data-provider-id");
+      if (!id) return;
+      e.preventDefault();
+      if (id === "nvidia") {
+        showInstallScreen("nvidia");
+        apiKeyInput.focus();
+        if (!installTriggered && !installFailed) triggerInstall();
+      } else {
+        showInstallScreen("partner", id);
+      }
+    });
+  }
 
   closeOnBackdrop(overlayInstall);
   closeOnBackdrop(overlayInstr);

@@ -3,7 +3,13 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import serverModule from '../server.js';
-const { renderOtherAgentsModal, getRenderedIndex, escapeHtml, _resetForTesting } = serverModule;
+const {
+  renderOtherAgentsModal,
+  renderInferenceProviderPickerAndInstructions,
+  getRenderedIndex,
+  escapeHtml,
+  _resetForTesting,
+} = serverModule;
 
 // === TC-T01 through TC-T14: YAML-to-HTML template rendering ===
 
@@ -88,6 +94,26 @@ describe("renderOtherAgentsModal", () => {
   });
 });
 
+describe("renderInferenceProviderPickerAndInstructions", () => {
+  it("TC-T15: picker contains NVIDIA row and heading when YAML present", () => {
+    const html = renderInferenceProviderPickerAndInstructions();
+    if (!html) return;
+    expect(html).toContain("Choose your inference provider");
+    expect(html).toContain('data-provider-id="nvidia"');
+    expect(html).toContain("Free endpoint provider");
+  });
+
+  it("TC-T16: picker contains partner grid and provider-instructions blocks", () => {
+    const html = renderInferenceProviderPickerAndInstructions();
+    if (!html) return;
+    expect(html).toContain("provider-picker__grid");
+    expect(html).toContain("install-partner-instructions");
+    expect(html).toContain("partner-instructions-content");
+    expect(html).toContain("provider-instructions-");
+    expect(html).toContain("Back to providers");
+  });
+});
+
 describe("getRenderedIndex", () => {
   beforeEach(() => {
     _resetForTesting();
@@ -111,5 +137,17 @@ describe("getRenderedIndex", () => {
     const hasModal = html.includes("overlay-instructions");
     const hasComment = html.includes("<!-- other-agents.yaml not available -->");
     expect(hasModal || hasComment).toBe(true);
+  });
+
+  it("TC-T17: {{INFERENCE_PROVIDER_PICKER}} is replaced in index.html", () => {
+    const html = getRenderedIndex();
+    expect(html).not.toContain("{{INFERENCE_PROVIDER_PICKER}}");
+  });
+
+  it("TC-T18: inference picker replaced with content or fallback comment", () => {
+    const html = getRenderedIndex();
+    const hasPicker = html.includes("install-provider-picker");
+    const hasComment = html.includes("<!-- inference-providers.yaml not available -->");
+    expect(hasPicker || hasComment).toBe(true);
   });
 });

@@ -126,6 +126,8 @@ The server operates in **two distinct modes** depending on sandbox readiness:
 | `LOG_FILE` | `/tmp/nemoclaw-sandbox-create.log` | Sandbox creation log (written by subprocess) |
 | `PROVIDER_CONFIG_CACHE` | `/tmp/nemoclaw-provider-config-cache.json` | Provider config values cache |
 | `OTHER_AGENTS_YAML` | `ROOT/other-agents.yaml` | YAML modal definition file |
+| `INFERENCE_PROVIDERS_YAML` | `ROOT/inference-providers.yaml` | Inference provider picker and per-partner instructions |
+| `NCP_LOGOS_DIR` | `SANDBOX_DIR/ncp-logos` | Partner and NVIDIA logos served at `/ncp-logos/*` |
 | `NEMOCLAW_IMAGE` | `ghcr.io/nvidia/openshell-community/sandboxes/openclaw-nvidia:local` | Optional image override |
 | `SANDBOX_PORT` | `18789` | Port the sandbox listens on (localhost) |
 
@@ -845,6 +847,21 @@ steps:                                  # Array of instruction sections
 
 4. **Fallback:** If YAML fails to parse or PyYAML is not installed, the placeholder is replaced with an HTML comment: `<!-- other-agents.yaml not available -->`
 
+### Inference Provider Picker (`inference-providers.yaml`)
+
+The server also renders `inference-providers.yaml` into HTML and injects it into `index.html`, replacing the `{{INFERENCE_PROVIDER_PICKER}}` placeholder. This provides:
+
+- **Picker screen:** "Choose your inference provider" with NVIDIA (free) in its own row and paid partners in a 5×2 grid. Each tile has `data-provider-id` for JS.
+- **Partner instruction blocks:** For each partner, a `div#provider-instructions-{id}` with title, intro, and steps (same schema as other-agents steps). Shown when the user clicks a partner.
+
+**YAML schema:** Top-level `nvidia: { displayName, logoFile }` and `partners: [ { id, name, logoFile, instructions: { title, intro?, steps[] } } ]`. Logo filenames refer to files under `NCP_LOGOS_DIR`, served at `GET /ncp-logos/<filename>`.
+
+**Fallback:** If the file is missing or invalid, the placeholder is replaced with `<!-- inference-providers.yaml not available -->` and the Install OpenClaw modal shows only the NVIDIA API key view (no picker).
+
+### NCP Logos Route (`GET /ncp-logos/*`)
+
+In welcome-ui mode (before sandbox is ready), `GET /ncp-logos/<file>` serves static files from `SANDBOX_DIR/ncp-logos/`. Path traversal is rejected; only files under that directory are served. Used for NVIDIA and partner logos in the provider picker. MIME type for `.webp` is `image/webp`.
+
 ---
 
 ## 9. Policy Management Pipeline
@@ -1146,6 +1163,8 @@ All CLI commands are executed via `subprocess.run()` or `subprocess.Popen()`. Ev
 |------|------|----------|
 | `ROOT/index.html` | First request to `/` | Yes |
 | `ROOT/other-agents.yaml` | First request to `/` | No (graceful fallback) |
+| `ROOT/inference-providers.yaml` | First request to `/` | No (graceful fallback) |
+| `SANDBOX_DIR/ncp-logos/*` | `GET /ncp-logos/<file>` | No (optional logos) |
 | `ROOT/styles.css` | Static file serving | Yes (for UI) |
 | `ROOT/app.js` | Static file serving | Yes (for UI) |
 | `SANDBOX_DIR/policy.yaml` | Sandbox creation | No (graceful fallback) |

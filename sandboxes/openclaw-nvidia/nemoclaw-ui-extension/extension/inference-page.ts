@@ -117,6 +117,18 @@ const PROVIDER_TEMPLATES: { label: string; name: string; type: string; config: R
 
 const PROVIDER_TYPE_OPTIONS = ["openai", "anthropic", "nvidia"];
 
+/** Display label for the API compatibility type (shown in the type pill). */
+const TYPE_PILL_LABELS: Record<string, string> = {
+  openai: "OpenAI-compatible",
+  anthropic: "Anthropic-compatible",
+  nvidia: "OpenAI-compatible",
+  generic: "Custom",
+};
+
+function getTypePillLabel(type: string): string {
+  return TYPE_PILL_LABELS[type] ?? TYPE_PILL_LABELS.generic;
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -300,6 +312,7 @@ function buildGatewayStrip(): HTMLElement {
     <div class="nc-gateway-tooltip__row"><strong>OpenShell Proxy</strong> intercepts, injects credentials</div>
     <div class="nc-gateway-tooltip__arrow">&darr;</div>
     <div class="nc-gateway-tooltip__row"><strong>Provider API</strong> receives authenticated request</div>
+    <div class="nc-gateway-tooltip__row nc-gateway-tooltip__row--muted">For <strong>integrate.api.nvidia.com</strong>: proxy injects <code>stream: true</code>, <code>NVCF-POLL-SECONDS: 1800</code>, <code>X-BILLING-INVOKE-ORIGIN: openshell</code>, per-model thinking/reasoning, and default sampling (temperature, max_tokens).</div>
     <div class="nc-gateway-tooltip__footer">${ICON_LOCK} Enforced by the OpenShell runtime. Cannot be changed from within the sandbox.</div>`;
   tooltip.style.display = "none";
 
@@ -487,7 +500,7 @@ function buildActiveConfig(): HTMLElement {
   const activeType = activeProvider?._draft?.type || activeProvider?.type || "";
   const typePill = document.createElement("span");
   typePill.className = `nemoclaw-inference-type-pill nemoclaw-inference-type-pill--${PROVIDER_PROFILES[activeType] ? activeType : "generic"}`;
-  typePill.textContent = activeType || "—";
+  typePill.textContent = getTypePillLabel(activeType || "generic");
   provRow.appendChild(provLabel);
   provRow.appendChild(provSelect);
   provRow.appendChild(typePill);
@@ -830,7 +843,8 @@ function buildProviderCard(provider: InferenceProvider, list: HTMLElement): HTML
 
 function buildTypePill(type: string): string {
   const cls = PROVIDER_PROFILES[type] ? type : "generic";
-  return `<span class="nemoclaw-inference-type-pill nemoclaw-inference-type-pill--${cls}">${escapeHtml(type)}</span>`;
+  const label = getTypePillLabel(type || "generic");
+  return `<span class="nemoclaw-inference-type-pill nemoclaw-inference-type-pill--${cls}">${escapeHtml(label)}</span>`;
 }
 
 // ---------------------------------------------------------------------------

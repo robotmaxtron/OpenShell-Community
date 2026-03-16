@@ -656,6 +656,12 @@ main.content {
   background: rgba(118, 185, 0, 0.15);
 }
 
+.nemoclaw-model-option__inference-badge {
+  font-size: 0.75rem;
+  opacity: 0.85;
+  margin-left: 4px;
+}
+
 /* ===========================================
    Initial Connection — Hide the entire app until gateway pairing completes.
    The OpenClaw UI uses Lit Web Components with Shadow DOM, so external
@@ -3282,6 +3288,11 @@ body.nemoclaw-switching openclaw-app {
   color: var(--text-strong, #fafafa);
 }
 
+.nc-gateway-tooltip__row--muted {
+  opacity: 0.9;
+  font-size: 0.9em;
+}
+
 .nc-gateway-tooltip__row code {
   font-size: 11px;
   padding: 1px 5px;
@@ -3883,10 +3894,9 @@ body.nemoclaw-switching openclaw-app {
 
 .nemoclaw-inference-type-pill {
   display: inline-block;
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   padding: 2px 8px;
   border-radius: 4px;
   line-height: 1.5;
@@ -3899,6 +3909,32 @@ body.nemoclaw-switching openclaw-app {
 .nemoclaw-inference-type-pill--anthropic { border-color: #d97706; color: #d97706; }
 .nemoclaw-inference-type-pill--nvidia { border-color: var(--nvidia-accent); color: var(--nvidia-accent); }
 .nemoclaw-inference-type-pill--generic { border-color: #6b7280; color: #6b7280; }
+
+:root[data-theme="light"] .nemoclaw-inference-type-pill {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+  color: #52525b;
+}
+:root[data-theme="light"] .nemoclaw-inference-type-pill--openai {
+  background: #ecfdf5;
+  border-color: #10a37f;
+  color: #047857;
+}
+:root[data-theme="light"] .nemoclaw-inference-type-pill--anthropic {
+  background: #fffbeb;
+  border-color: #d97706;
+  color: #b45309;
+}
+:root[data-theme="light"] .nemoclaw-inference-type-pill--nvidia {
+  background: #f4f9eb;
+  border-color: var(--nvidia-accent);
+  color: var(--nvidia-accent);
+}
+:root[data-theme="light"] .nemoclaw-inference-type-pill--generic {
+  background: #f4f4f5;
+  border-color: #6b7280;
+  color: #4b5563;
+}
 
 /* --- Status Dots --- */
 

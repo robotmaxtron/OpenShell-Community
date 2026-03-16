@@ -40,6 +40,8 @@ try {
 const PORT = parseInt(process.env.PORT || "8081", 10);
 const ROOT = __dirname;
 const REPO_ROOT = process.env.REPO_ROOT || path.join(ROOT, "..", "..");
+/** When set (e.g. 1 or true), never proxy to sandbox — serve welcome UI only. */
+const WELCOME_UI_ONLY = /^(1|true|yes)$/i.test(process.env.WELCOME_UI_ONLY || "");
 const CLI_BIN = process.env.CLI_BIN || "openshell";
 const SANDBOX_DIR = path.join(REPO_ROOT, "sandboxes", "openclaw-nvidia");
 const SANDBOX_NAME = process.env.SANDBOX_NAME || "openclaw-nvidia";
@@ -65,6 +67,7 @@ const INFERENCE_BUNDLE_SETTLE_MS = parseInt(
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g;
 
 const OTHER_AGENTS_YAML = path.join(ROOT, "other-agents.yaml");
+const INFERENCE_PROVIDERS_YAML = path.join(ROOT, "inference-providers.yaml");
 
 const COPY_BTN_SVG =
   '<svg viewBox="0 0 24 24">' +
@@ -92,9 +95,12 @@ const MIME_TYPES = {
   ".yml": "text/yaml; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".webp": "image/webp",
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
 };
+
+const NCP_LOGOS_DIR = path.join(SANDBOX_DIR, "ncp-logos");
 
 // ── Utility helpers ────────────────────────────────────────────────────────
 
@@ -415,6 +421,7 @@ function readOpenclawToken() {
 }
 
 async function sandboxReady() {
+  if (WELCOME_UI_ONLY) return false;
   if (sandboxState.status === "running") return true;
   if (
     sandboxState.status === "idle" ||
@@ -555,6 +562,129 @@ function renderOtherAgentsModal() {
   );
 }
 
+/**
+ * Renders a steps[] array (same shape as other-agents.yaml) to HTML.
+ * Used for partner instruction blocks in the inference provider picker.
+ */
+function renderStepsToHtml(steps) {
+  const bodyParts = [];
+  (steps || []).forEach((step, idx) => {
+    const i = idx + 1;
+    const stepTitle = step.title || "";
+    const commands = step.commands || [];
+    const copyable = !!step.copyable;
+    const blockId = step.block_id || "";
+    const copyBtnId = step.copy_button_id || "";
+    const description = (step.description || "").trim();
+
+    bodyParts.push('<div class="instructions-section">');
+    bodyParts.push(`<h4 class="instructions-section__title">${i}. ${escapeHtml(stepTitle)}</h4>`);
+
+    const groups = [];
+    for (const entry of commands) {
+      const lines = [];
+      if (typeof entry === "string") {
+        lines.push(`<span class="cmd">${escapeHtml(entry)}</span>`);
+      } else if (typeof entry === "object" && entry !== null) {
+        const comment = entry.comment || "";
+        const cmd = entry.cmd || "";
+        const cmdId = entry.id || "";
+        const idAttr = cmdId ? ` id="${escapeHtml(cmdId)}"` : "";
+        if (comment) {
+          lines.push(`<span class="comment"># ${escapeHtml(comment)}</span>`);
+        }
+        lines.push(`<span class="cmd"${idAttr}>${escapeHtml(cmd)}</span>`);
+      }
+      groups.push(lines.join("\n"));
+    }
+    const cmdHtml = groups.join("\n\n");
+    let copyHtml = "";
+    if (copyable) {
+      if (copyBtnId) {
+        copyHtml = `<button class="copy-btn" id="${escapeHtml(copyBtnId)}" aria-label="Copy">${COPY_BTN_SVG}</button>`;
+      } else if (commands.length === 1) {
+        const raw = typeof commands[0] === "string" ? commands[0] : (commands[0].cmd || "");
+        copyHtml = `<button class="copy-btn" data-copy="${escapeHtml(raw)}" aria-label="Copy">${COPY_BTN_SVG}</button>`;
+      } else {
+        copyHtml = `<button class="copy-btn" aria-label="Copy">${COPY_BTN_SVG}</button>`;
+      }
+    }
+    const blockIdAttr = blockId ? ` id="${escapeHtml(blockId)}"` : "";
+    bodyParts.push(`<div class="code-block"${blockIdAttr}>${cmdHtml}${copyHtml}</div>`);
+    if (description) {
+      bodyParts.push(`<p class="modal__text" style="margin-top:10px">${description}</p>`);
+    }
+    bodyParts.push("</div>");
+  });
+  return bodyParts.join("\n");
+}
+
+function renderInferenceProviderPickerAndInstructions() {
+  if (!fs.existsSync(INFERENCE_PROVIDERS_YAML)) return null;
+  if (!yaml) {
+    logWelcome("js-yaml not installed; inference-providers.yaml ignored");
+    return null;
+  }
+  let data;
+  try {
+    data = yaml.load(fs.readFileSync(INFERENCE_PROVIDERS_YAML, "utf-8"));
+  } catch (e) {
+    logWelcome(`Failed to parse inference-providers.yaml: ${e}`);
+    return null;
+  }
+
+  const nvidia = data.nvidia || { displayName: "NVIDIA", logoFile: "nvidia.png" };
+  const partners = data.partners || [];
+  const nvidiaName = escapeHtml(nvidia.displayName || "NVIDIA");
+  const nvidiaLogo = escapeHtml(nvidia.logoFile || "nvidia.png");
+
+  const pickerParts = [];
+  pickerParts.push('<div id="install-provider-picker" class="provider-picker">');
+  pickerParts.push('<p class="provider-picker__heading">Choose your endpoint provider</p>');
+  pickerParts.push('<div class="provider-picker__nvidia-row" data-provider-id="nvidia" role="button" tabindex="0">');
+  pickerParts.push(`<img class="provider-picker__logo provider-picker__logo--nvidia" src="/ncp-logos/${nvidiaLogo}" alt="" width="32" height="32">`);
+  pickerParts.push(`<span class="provider-picker__name">${nvidiaName}</span>`);
+  pickerParts.push('<span class="provider-picker__badge provider-picker__badge--free">Free trial. Rate limited.</span>');
+  pickerParts.push("</div>");
+  pickerParts.push('<p class="provider-picker__partners-label">Inference providers</p>');
+  pickerParts.push('<div class="provider-picker__grid">');
+  partners.forEach((p) => {
+    const id = escapeHtml(p.id || "");
+    const name = escapeHtml(p.name || p.id || "");
+    const logoFile = escapeHtml(p.logoFile || "generic");
+    pickerParts.push(`<div class="provider-picker__tile" data-provider-id="${id}" role="button" tabindex="0">`);
+    pickerParts.push(`<img class="provider-picker__logo" src="/ncp-logos/${logoFile}" alt="" width="32" height="32">`);
+    pickerParts.push(`<span class="provider-picker__name">${name}</span>`);
+    pickerParts.push("</div>");
+  });
+  pickerParts.push("</div>");
+  pickerParts.push("</div>");
+
+  const instructionParts = [];
+  instructionParts.push('<div id="install-partner-instructions" class="partner-instructions" hidden>');
+  instructionParts.push('<button type="button" class="provider-picker__back" id="back-from-partner">Back to providers</button>');
+  instructionParts.push('<div id="partner-instructions-content">');
+  partners.forEach((p) => {
+    const inst = p.instructions;
+    if (!inst || !inst.steps || inst.steps.length === 0) {
+      instructionParts.push(`<div id="provider-instructions-${escapeHtml(p.id || "")}" class="partner-instructions__block" hidden></div>`);
+      return;
+    }
+    const title = escapeHtml(inst.title || p.name || p.id || "Instructions");
+    const intro = (inst.intro || "").trim();
+    const stepsHtml = renderStepsToHtml(inst.steps);
+    instructionParts.push(`<div id="provider-instructions-${escapeHtml(p.id || "")}" class="partner-instructions__block" hidden>`);
+    instructionParts.push(`<h3 class="partner-instructions__title">${title}</h3>`);
+    if (intro) instructionParts.push(`<p class="modal__text">${intro}</p>`);
+    instructionParts.push(stepsHtml);
+    instructionParts.push("</div>");
+  });
+  instructionParts.push("</div>");
+  instructionParts.push("</div>");
+
+  return pickerParts.join("\n") + "\n" + instructionParts.join("\n");
+}
+
 let renderedIndex = null;
 
 function getRenderedIndex() {
@@ -572,6 +702,18 @@ function getRenderedIndex() {
       "<!-- other-agents.yaml not available -->"
     );
     logWelcome("WARNING: could not render other-agents.yaml");
+  }
+
+  const pickerHtml = renderInferenceProviderPickerAndInstructions();
+  if (pickerHtml) {
+    template = template.replace("{{INFERENCE_PROVIDER_PICKER}}", pickerHtml);
+    logWelcome("Rendered inference-providers.yaml into index.html");
+  } else {
+    template = template.replace(
+      "{{INFERENCE_PROVIDER_PICKER}}",
+      "<!-- inference-providers.yaml not available -->"
+    );
+    logWelcome("WARNING: could not render inference-providers.yaml");
   }
 
   renderedIndex = template;
@@ -1145,10 +1287,11 @@ function parseClusterInference(stdout) {
 
 async function handleClusterInferenceGet(req, res) {
   try {
+    // Canonical command per SERVER_ARCHITECTURE.md is "cluster inference get"; try "inference get" as fallback.
     const result = await execFirstSuccess(
       [
-        cliArgs("inference", "get"),
         cliArgs("cluster", "inference", "get"),
+        cliArgs("inference", "get"),
       ],
       30000
     );
@@ -1203,10 +1346,11 @@ async function handleClusterInferenceSet(req, res) {
     });
   }
   try {
+    // Canonical command per SERVER_ARCHITECTURE.md is "cluster inference set"; try "inference set" as fallback.
     const result = await execFirstSuccess(
       [
-        cliArgs("inference", "set", "--provider", providerName, "--model", modelId, "--no-verify"),
         cliArgs("cluster", "inference", "set", "--provider", providerName, "--model", modelId, "--no-verify"),
+        cliArgs("inference", "set", "--provider", providerName, "--model", modelId, "--no-verify"),
       ],
       30000
     );
@@ -1735,6 +1879,56 @@ function serveTemplatedIndex(req, res) {
   }
 }
 
+function serveNcpLogos(req, res, pathname) {
+  if (pathname.includes("..")) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+  const subPath = pathname.slice("/ncp-logos/".length) || "";
+  if (!subPath || subPath.includes("..")) {
+    res.writeHead(404);
+    res.end("Not Found");
+    return;
+  }
+  const filePath = path.join(NCP_LOGOS_DIR, subPath);
+  const resolved = path.resolve(filePath);
+  const logosDirResolved = path.resolve(NCP_LOGOS_DIR);
+  if (!resolved.startsWith(logosDirResolved + path.sep) && resolved !== logosDirResolved) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+  fs.stat(filePath, (err, stat) => {
+    if (err || !stat.isFile()) {
+      setDefaultHeaders(res);
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not Found");
+      return;
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || "application/octet-stream";
+    fs.readFile(filePath, (readErr, data) => {
+      if (readErr) {
+        setDefaultHeaders(res);
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Internal Server Error");
+        return;
+      }
+      setDefaultHeaders(res);
+      res.writeHead(200, {
+        "Content-Type": contentType,
+        "Content-Length": data.length,
+      });
+      if (req.method !== "HEAD") {
+        res.end(data);
+      } else {
+        res.end();
+      }
+    });
+  });
+}
+
 function serveStaticFile(req, res, pathname) {
   // Security: reject path traversal
   if (pathname.includes("..")) {
@@ -1842,6 +2036,11 @@ async function handleRequest(req, res) {
     return proxyToSandbox(req, res);
   }
 
+  // NCP logos (welcome UI only, before static)
+  if ((method === "GET" || method === "HEAD") && pathname.startsWith("/ncp-logos/")) {
+    return serveNcpLogos(req, res, pathname);
+  }
+
   // Welcome UI mode: serve static files
   if (method === "GET" || method === "HEAD") {
     if (pathname === "" || pathname === "/" || pathname === "/index.html") {
@@ -1906,6 +2105,9 @@ if (require.main === module) {
   initDenialsGrpc();
   server.listen(PORT, "", () => {
     console.log(`OpenShell Welcome UI -> http://localhost:${PORT}`);
+    if (WELCOME_UI_ONLY) {
+      console.log("[welcome-ui] WELCOME_UI_ONLY=1: serving welcome UI only (no sandbox proxy)");
+    }
   });
 }
 
@@ -1923,6 +2125,8 @@ module.exports = {
   parseClusterInference,
   stripPolicyFields,
   renderOtherAgentsModal,
+  renderStepsToHtml,
+  renderInferenceProviderPickerAndInstructions,
   getRenderedIndex,
   readConfigCache,
   writeConfigCache,

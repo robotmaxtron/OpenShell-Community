@@ -82,7 +82,11 @@
       </div>
       <div class="modal__body" id="install-body">
 
-        <div id="install-main">
+        {{INFERENCE_PROVIDER_PICKER}}
+
+        <div id="install-nvidia-key" class="install-nvidia-key" hidden>
+          <button type="button" class="provider-picker__back" id="back-from-nvidia">Back to providers</button>
+          <div id="install-main">
           <!-- Zone A: Active user input — interactive from second zero -->
           <div class="zone-input">
             <p class="zone-input__desc">
@@ -139,6 +143,7 @@
             <span id="btn-launch-label">Waiting for API key...</span>
             <svg class="btn__external-icon" viewBox="0 0 24 24" fill="none"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
           </button>
+          </div>
         </div>
 
         <!-- Error state -->

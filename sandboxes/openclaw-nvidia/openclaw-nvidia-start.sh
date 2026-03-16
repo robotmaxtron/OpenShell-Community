@@ -67,7 +67,7 @@ fi
 # --------------------------------------------------------------------------
 # Onboard and start the gateway
 # --------------------------------------------------------------------------
-_DEFAULT_MODEL="qwen/qwen3.5-397b-a17b"
+_DEFAULT_MODEL="moonshotai/kimi-k2.5"
 _DEFAULT_CONTEXT_WINDOW=200000
 _DEFAULT_MAX_TOKENS=8192
 export NVIDIA_API_KEY="${NVIDIA_INFERENCE_API_KEY:- }"

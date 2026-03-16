@@ -457,16 +457,25 @@
     checkout_repo_ref
   }
 
-  install_cli_from_release() {
-    local arch tmpdir repo pattern archive candidate
+install_cli_from_release() {
+  local arch tmpdir repo pattern archive candidate url gh_available
 
-    ensure_gh
+  arch="$(detect_arch)"
+  tmpdir="$(mktemp -d)"
+  gh_available=0
+
+  if command -v gh >/dev/null 2>&1; then
+    gh_available=1
     gh_auth_if_needed
+  elif command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+    log "GitHub CLI not installed; using direct GitHub release downloads."
+  else
+    ensure_gh
+    gh_available=1
+    gh_auth_if_needed
+  fi
 
-    arch="$(detect_arch)"
-    tmpdir="$(mktemp -d)"
-
-    for candidate in openshell nemoclaw; do
+  for candidate in openshell nemoclaw; do
       case "$candidate" in
         openshell) repo="NVIDIA/OpenShell" ;;
         nemoclaw) repo="NVIDIA/NemoClaw" ;;
@@ -474,7 +483,20 @@
 
       pattern="${candidate}-${arch}-unknown-linux-musl.tar.gz"
       log "Trying CLI download: ${repo} ${CLI_RELEASE_TAG} ${pattern}"
-      if gh release download "$CLI_RELEASE_TAG" --repo "$repo" --pattern "$pattern" --dir "$tmpdir" >/dev/null 2>&1; then
+      archive="$tmpdir/$pattern"
+      url="https://github.com/${repo}/releases/download/${CLI_RELEASE_TAG}/${pattern}"
+
+      if command -v curl >/dev/null 2>&1 && curl -fsSL "$url" -o "$archive"; then
+        :
+      elif command -v wget >/dev/null 2>&1 && wget -q -O "$archive" "$url"; then
+        :
+      elif [[ "$gh_available" -eq 1 ]] && gh release download "$CLI_RELEASE_TAG" --repo "$repo" --pattern "$pattern" --dir "$tmpdir" >/dev/null 2>&1; then
+        :
+      else
+        continue
+      fi
+
+      if [[ -f "$archive" ]]; then
         archive="$tmpdir/$pattern"
         tar xzf "$archive" -C "$tmpdir"
         sudo install -m 755 "$tmpdir/$candidate" "/usr/local/bin/$candidate"

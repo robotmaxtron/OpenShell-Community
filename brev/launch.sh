@@ -17,7 +17,7 @@
 
   PORT="${PORT:-8081}"
   CLI_BIN="${CLI_BIN:-}"
-  CLI_RELEASE_TAG="${CLI_RELEASE_TAG:-devel}"
+  CLI_RELEASE_TAG="${CLI_RELEASE_TAG:-dev}"
   AUTO_INSTALL_CLI="${AUTO_INSTALL_CLI:-1}"
   GITHUB_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-${GITHUB_PAT:-}}}"
   COMMUNITY_REPO="${COMMUNITY_REPO:-NVIDIA/OpenShell-Community}"
@@ -466,7 +466,9 @@ install_cli_from_release() {
   tmpdir="$(mktemp -d)"
   gh_available=0
   download_tag="$CLI_RELEASE_TAG"
-  if [[ "$download_tag" != "devel" && "$download_tag" != v* ]]; then
+  if [[ "$download_tag" == "devel" ]]; then
+    download_tag="dev"
+  elif [[ "$download_tag" != "dev" && "$download_tag" != v* ]]; then
     download_tag="v$download_tag"
   fi
 
@@ -512,6 +514,20 @@ install_cli_from_release() {
         return 0
       fi
     done
+
+    log "Release asset download failed for tag ${download_tag}; falling back to the official installer script."
+    if curl -fsSL https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh -o "$tmpdir/install-openshell.sh"; then
+      chmod +x "$tmpdir/install-openshell.sh"
+      OPENSHELL_VERSION="$download_tag" OPENSHELL_INSTALL_DIR="$tmpdir/bin" "$tmpdir/install-openshell.sh" >/dev/null 2>&1
+
+      if [[ -x "$tmpdir/bin/openshell" ]]; then
+        sudo install -m 755 "$tmpdir/bin/openshell" /usr/local/bin/openshell
+        CLI_BIN="openshell"
+        log "Installed CLI via official installer fallback: $CLI_BIN"
+        rm -rf "$tmpdir"
+        return 0
+      fi
+    fi
 
     rm -rf "$tmpdir"
     log "Unable to install CLI from GitHub releases."

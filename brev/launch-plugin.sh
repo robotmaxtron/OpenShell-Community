@@ -27,7 +27,7 @@ PLUGIN_REF="${PLUGIN_REF:-main}"
 PLUGIN_CLONE_ROOT="${PLUGIN_CLONE_ROOT:-}"
 PLUGIN_DIR="${PLUGIN_DIR:-}"
 CLI_BIN="${CLI_BIN:-openshell}"
-CLI_RELEASE_TAG="${CLI_RELEASE_TAG:-devel}"
+CLI_RELEASE_TAG="${CLI_RELEASE_TAG:-dev}"
 OPENCLAW_VERSION="${OPENCLAW_VERSION:-latest}"
 CODE_SERVER_VERSION="${CODE_SERVER_VERSION:-4.89.1}"
 CODE_SERVER_PORT="${CODE_SERVER_PORT:-13337}"
@@ -472,16 +472,20 @@ ensure_docker() {
 }
 
 install_cli_from_release() {
-  local arch tmpdir repo pattern archive url
+  local arch tmpdir repo pattern archive url download_tag
 
   arch="$(detect_arch)"
   repo="NVIDIA/OpenShell"
+  download_tag="$CLI_RELEASE_TAG"
+  if [[ "$download_tag" == "devel" ]]; then
+    download_tag="dev"
+  fi
   pattern="openshell-${arch}-unknown-linux-musl.tar.gz"
   tmpdir="$(mktemp -d)"
   archive="$tmpdir/$pattern"
 
   if command -v gh >/dev/null 2>&1; then
-    if gh release download "$CLI_RELEASE_TAG" --repo "$repo" --pattern "$pattern" --dir "$tmpdir" >/dev/null 2>&1; then
+    if gh release download "$download_tag" --repo "$repo" --pattern "$pattern" --dir "$tmpdir" >/dev/null 2>&1; then
       tar xzf "$archive" -C "$tmpdir"
       sudo install -m 755 "$tmpdir/openshell" /usr/local/bin/openshell
       CLI_BIN="openshell"
@@ -490,7 +494,7 @@ install_cli_from_release() {
     fi
   fi
 
-  url="https://github.com/NVIDIA/OpenShell/releases/download/${CLI_RELEASE_TAG}/${pattern}"
+  url="https://github.com/NVIDIA/OpenShell/releases/download/${download_tag}/${pattern}"
   log "Falling back to direct OpenShell release download..."
   if curl -fsSL "$url" -o "$archive"; then
     tar xzf "$archive" -C "$tmpdir"
@@ -498,6 +502,19 @@ install_cli_from_release() {
     CLI_BIN="openshell"
     rm -rf "$tmpdir"
     return 0
+  fi
+
+  log "Direct asset download failed for tag ${download_tag}; falling back to the official installer script."
+  if curl -fsSL https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh -o "$tmpdir/install-openshell.sh"; then
+    chmod +x "$tmpdir/install-openshell.sh"
+    OPENSHELL_VERSION="$download_tag" OPENSHELL_INSTALL_DIR="$tmpdir/bin" "$tmpdir/install-openshell.sh" >/dev/null 2>&1
+
+    if [[ -x "$tmpdir/bin/openshell" ]]; then
+      sudo install -m 755 "$tmpdir/bin/openshell" /usr/local/bin/openshell
+      CLI_BIN="openshell"
+      rm -rf "$tmpdir"
+      return 0
+    fi
   fi
 
   rm -rf "$tmpdir"
